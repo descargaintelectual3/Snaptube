@@ -1,15 +1,21 @@
 package com.example.ui.screens
 
+import android.annotation.SuppressLint
+import android.graphics.Bitmap
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,12 +38,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +77,16 @@ import com.example.data.repository.MediaCatalog
 import com.example.ui.theme.SnaptubeRed
 import com.example.ui.theme.SnaptubeYellow
 
+class MediaExtractorBridge(
+    private val onMediaExtracted: (title: String, mediaUrl: String) -> Unit
+) {
+    @JavascriptInterface
+    fun onMediaFound(title: String, mediaUrl: String) {
+        onMediaExtracted(title, mediaUrl)
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun BrowserScreen(
     currentUrl: String,
@@ -79,6 +97,9 @@ fun BrowserScreen(
 ) {
     var inputUrl by remember(currentUrl) { mutableStateOf(currentUrl) }
     var isLoading by remember { mutableStateOf(false) }
+    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
 
     // Pulsating animation for Snaptube download sniffer button
     val infiniteTransition = rememberInfiniteTransition(label = "sniffer_pulse")
@@ -112,24 +133,34 @@ fun BrowserScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
-                            onClick = { /* Back */ },
+                            onClick = {
+                                if (webViewInstance?.canGoBack() == true) {
+                                    webViewInstance?.goBack()
+                                }
+                            },
+                            enabled = canGoBack,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Atrás",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = if (canGoBack) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                             )
                         }
 
                         IconButton(
-                            onClick = { /* Forward */ },
+                            onClick = {
+                                if (webViewInstance?.canGoForward() == true) {
+                                    webViewInstance?.goForward()
+                                }
+                            },
+                            enabled = canGoForward,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = "Adelante",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = if (canGoForward) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
                             )
                         }
 
@@ -179,7 +210,9 @@ fun BrowserScreen(
                         }
 
                         IconButton(
-                            onClick = { onNavigate(inputUrl) },
+                            onClick = {
+                                webViewInstance?.reload() ?: onNavigate(inputUrl)
+                            },
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
@@ -253,25 +286,151 @@ fun BrowserScreen(
                     .weight(1f),
                 factory = { context ->
                     WebView(context).apply {
+                        webViewInstance = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        webViewClient = object : WebViewClient() {
-                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                                isLoading = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
+
+                        addJavascriptInterface(
+                            MediaExtractorBridge { title, mediaUrl ->
+                                // Trigger media extraction
+                            },
+                            "SnaptubeBridge"
+                        )
+
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                isLoading = newProgress < 100
                             }
+                        }
+
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                isLoading = true
+                                url?.let { inputUrl = it }
+                                canGoBack = view?.canGoBack() == true
+                                canGoForward = view?.canGoForward() == true
+                            }
+
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 isLoading = false
+                                canGoBack = view?.canGoBack() == true
+                                canGoForward = view?.canGoForward() == true
+                                
+                                // Inject media sniffer script
+                                val jsSniffer = """
+                                    (function() {
+                                        var videoTags = document.querySelectorAll('video, audio');
+                                        if (videoTags.length > 0) {
+                                            var src = videoTags[0].currentSrc || videoTags[0].src;
+                                            if (src && window.SnaptubeBridge) {
+                                                window.SnaptubeBridge.onMediaFound(document.title, src);
+                                            }
+                                        }
+                                    })();
+                                """.trimIndent()
+                                view?.evaluateJavascript(jsSniffer, null)
                             }
                         }
                         loadUrl(currentUrl)
                     }
                 },
                 update = { webView ->
+                    webViewInstance = webView
                     if (webView.url != currentUrl) {
                         webView.loadUrl(currentUrl)
                     }
                 }
             )
+        }
+
+        // Floating Bottom Media Detection Alert Card
+        AnimatedVisibility(
+            visible = detectedMedia != null,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 16.dp, vertical = 84.dp),
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
+        ) {
+            detectedMedia?.let { media ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onDownloadDetectedMedia(media) }
+                        .testTag("detected_media_banner"),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    tonalElevation = 6.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SnaptubeYellow),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VideoLibrary,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "¡Video detectado en la página!",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SnaptubeYellow
+                            )
+                            Text(
+                                text = media.title,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Button(
+                            onClick = { onDownloadDetectedMedia(media) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SnaptubeRed,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Descargar",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // The Signature Snaptube Floating Pulsating Video Detector FAB
@@ -280,7 +439,7 @@ fun BrowserScreen(
                 onClick = { onDownloadDetectedMedia(detectedMedia) },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 86.dp)
+                    .padding(end = 20.dp, bottom = 150.dp)
                     .scale(pulseScale)
                     .testTag("browser_download_fab"),
                 containerColor = SnaptubeYellow,

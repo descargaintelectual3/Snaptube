@@ -8,7 +8,8 @@ import androidx.room.PrimaryKey
  */
 enum class MediaType {
     VIDEO,
-    AUDIO
+    AUDIO,
+    IMAGE
 }
 
 enum class DownloadStatus {
@@ -83,5 +84,7 @@ data class WhatsAppStatusItem(
     val duration: String = "",
     val timestamp: String = "Hace 20 min",
     val thumbnailUrl: String,
-    val isSaved: Boolean = false
+    val isSaved: Boolean = false,
+    val localFilePath: String = "",
+    val isFromDevice: Boolean = false
 )

@@ -113,7 +113,7 @@ object MediaCatalog {
             viewCount = "14.2M vistas",
             publishedTime = "hace 2 días",
             thumbnailUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            videoUrl = "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/person-bicycle-car-detection.mp4",
             category = "Música",
             qualityOptions = getDefaultQualityOptions(24.5)
         ),
@@ -125,7 +125,7 @@ object MediaCatalog {
             viewCount = "8.9M vistas",
             publishedTime = "hace 5 horas",
             thumbnailUrl = "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+            videoUrl = "https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/big_buck_bunny.mp4",
             category = "Gaming",
             qualityOptions = getDefaultQualityOptions(68.0)
         ),
@@ -137,7 +137,7 @@ object MediaCatalog {
             viewCount = "3.1M vistas",
             publishedTime = "hace 1 semana",
             thumbnailUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+            videoUrl = "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/car-detection.mp4",
             category = "Música",
             qualityOptions = getDefaultQualityOptions(42.0)
         ),
@@ -149,7 +149,7 @@ object MediaCatalog {
             viewCount = "950K vistas",
             publishedTime = "hace 3 días",
             thumbnailUrl = "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+            videoUrl = "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/bolt-detection.mp4",
             category = "Tecnología",
             qualityOptions = getDefaultQualityOptions(31.2)
         ),
@@ -161,7 +161,7 @@ object MediaCatalog {
             viewCount = "22.5M vistas",
             publishedTime = "hace 1 día",
             thumbnailUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+            videoUrl = "https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/echo-hereweare.mp4",
             category = "Tendencias",
             qualityOptions = getDefaultQualityOptions(18.0)
         ),
@@ -173,7 +173,7 @@ object MediaCatalog {
             viewCount = "5.4M vistas",
             publishedTime = "hace 4 días",
             thumbnailUrl = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4",
+            videoUrl = "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/classroom.mp4",
             category = "Deportes",
             qualityOptions = getDefaultQualityOptions(52.4)
         ),
@@ -185,7 +185,7 @@ object MediaCatalog {
             viewCount = "1.2M vistas",
             publishedTime = "hace 6 días",
             thumbnailUrl = "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+            videoUrl = "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/store-aisle-detection.mp4",
             category = "Tecnología",
             qualityOptions = getDefaultQualityOptions(45.0)
         ),
@@ -197,7 +197,7 @@ object MediaCatalog {
             viewCount = "4.8M vistas",
             publishedTime = "hace 2 días",
             thumbnailUrl = "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=600&auto=format&fit=crop",
-            videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+            videoUrl = "https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/big_buck_bunny.mp4",
             category = "Tendencias",
             qualityOptions = getDefaultQualityOptions(28.0)
         )

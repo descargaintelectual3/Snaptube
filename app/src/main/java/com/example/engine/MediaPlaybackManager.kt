@@ -34,7 +34,9 @@ data class PlaybackState(
     val queue: List<VideoItem> = emptyList(),
     val sleepTimerMinutesRemaining: Int? = null, // Sleep Timer (15m, 30m, 60m)
     val brightnessLevel: Float = 0.7f,
-    val volumeLevel: Float = 0.8f
+    val volumeLevel: Float = 0.8f,
+    val localFilePath: String = "",
+    val isOfflineMedia: Boolean = false
 ) {
     val progressFraction: Float
         get() = if (totalDurationSeconds > 0) {
@@ -77,7 +79,8 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
         thumbnailUrl: String,
         mediaUrl: String,
         isVideo: Boolean,
-        openFullScreen: Boolean = isVideo
+        openFullScreen: Boolean = isVideo,
+        localFilePath: String = ""
     ) {
         tickerJob?.cancel()
         // Ensure queue contains relevant videos around this one
@@ -107,7 +110,9 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
             isRepeat = _playbackState.value.isRepeat,
             isAutoplayEnabled = _playbackState.value.isAutoplayEnabled,
             queue = queueList,
-            sleepTimerMinutesRemaining = _playbackState.value.sleepTimerMinutesRemaining
+            sleepTimerMinutesRemaining = _playbackState.value.sleepTimerMinutesRemaining,
+            localFilePath = localFilePath,
+            isOfflineMedia = localFilePath.isNotEmpty()
         )
         startTicker()
     }

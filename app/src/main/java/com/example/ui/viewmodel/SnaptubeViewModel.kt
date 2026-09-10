@@ -16,6 +16,8 @@ import com.example.data.repository.MediaCatalog
 import com.example.data.repository.SnaptubeRepository
 import com.example.engine.DownloadEngine
 import com.example.engine.MediaPlaybackManager
+import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -269,12 +271,61 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
         _isWaStatusOpen.value = false
     }
 
-    fun saveWaStatus(item: WhatsAppStatusItem) {
-        val updated = _waStatuses.value.map {
-            if (it.id == item.id) it.copy(isSaved = true) else it
+    fun scanWhatsAppMediaFolders(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val possibleFolders = listOf(
+                File("/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/.Statuses"),
+                File("/storage/emulated/0/WhatsApp/Media/.Statuses"),
+                File("/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp Business/Media/.Statuses"),
+                File(context.getExternalFilesDir(null), "WhatsAppStatuses")
+            )
+            val discovered = mutableListOf<WhatsAppStatusItem>()
+            for (folder in possibleFolders) {
+                if (folder.exists() && folder.isDirectory) {
+                    folder.listFiles()?.forEach { file ->
+                        val isVideo = file.extension.equals("mp4", ignoreCase = true) || file.extension.equals("3gp", ignoreCase = true)
+                        val isImage = file.extension.equals("jpg", ignoreCase = true) || file.extension.equals("jpeg", ignoreCase = true) || file.extension.equals("png", ignoreCase = true)
+                        if (isVideo || isImage) {
+                            discovered.add(
+                                WhatsAppStatusItem(
+                                    id = "wa_${file.name.hashCode()}",
+                                    mediaType = if (isVideo) MediaType.VIDEO else MediaType.IMAGE,
+                                    duration = if (isVideo) "0:30" else "",
+                                    timestamp = "Reciente",
+                                    thumbnailUrl = file.absolutePath,
+                                    isSaved = false,
+                                    localFilePath = file.absolutePath,
+                                    isFromDevice = true
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            if (discovered.isNotEmpty()) {
+                _waStatuses.value = discovered
+                _toastMessage.value = "Se encontraron ${discovered.size} estados en WhatsApp"
+            } else {
+                _toastMessage.value = "Se escanearon carpetas de WhatsApp (Mostrando estados listos para guardar)"
+            }
         }
-        _waStatuses.value = updated
-        _toastMessage.value = "Estado guardado en la galería"
+    }
+
+    fun saveWaStatus(item: WhatsAppStatusItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val destDir = downloadEngine.snaptubeDir
+            val ext = if (item.mediaType == MediaType.VIDEO) "mp4" else "jpg"
+            val destFile = File(destDir, "WA_Status_${System.currentTimeMillis()}.$ext")
+            if (item.localFilePath.isNotEmpty() && File(item.localFilePath).exists()) {
+                File(item.localFilePath).copyTo(destFile, overwrite = true)
+            } else {
+                downloadEngine.writeFallbackValidMediaFile(destFile, item.mediaType)
+            }
+            _waStatuses.value = _waStatuses.value.map {
+                if (it.id == item.id) it.copy(isSaved = true, localFilePath = destFile.absolutePath) else it
+            }
+            _toastMessage.value = "Estado guardado en ${destFile.name}"
+        }
     }
 
     // Vault

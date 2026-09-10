@@ -24,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.example.data.model.DownloadStatus
 import com.example.data.model.MediaType
@@ -89,6 +90,7 @@ fun SnaptubeApp(
     onEnterPiP: () -> Unit = {}
 ) {
     val currentTab by viewModel.currentTab.collectAsState()
+    val context = LocalContext.current
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val activeDownloadVideo by viewModel.activeDownloadVideo.collectAsState()
     val isSearchOpen by viewModel.isSearchOpen.collectAsState()
@@ -136,6 +138,12 @@ fun SnaptubeApp(
         topBar = {
             if (!isSearchOpen && !isWaStatusOpen && !isVaultOpen && !isCleanerOpen) {
                 SnaptubeTopBar(
+                    searchQuery = searchQuery,
+                    onQueryChange = { viewModel.onSearchQueryChanged(it) },
+                    onSearchSubmit = { viewModel.performSearch(it) },
+                    onDirectDownloadUrl = { url ->
+                        viewModel.startDirectDownload(url, isAudio = false)
+                    },
                     activeDownloadsCount = activeDownloadingCount,
                     onSearchClick = { viewModel.openSearch() },
                     onPasteLinkClick = { viewModel.openDirectUrlDialog() },
@@ -289,6 +297,7 @@ fun SnaptubeApp(
                 StatusSaverScreen(
                     statuses = waStatuses,
                     onSaveStatus = { viewModel.saveWaStatus(it) },
+                    onScanDevice = { viewModel.scanWhatsAppMediaFolders(context) },
                     onClose = { viewModel.closeWaStatusSaver() }
                 )
             }

@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import android.widget.VideoView
+import androidx.compose.ui.viewinterop.AndroidView
+import java.io.File
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -142,12 +145,34 @@ fun VideoPlayerModal(
                 ) {
                     // Video Content or Audio-Only Visualizer
                     if (!state.isAudioOnlyMode) {
-                        AsyncImage(
-                            model = state.thumbnailUrl.ifEmpty { "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&auto=format&fit=crop" },
-                            contentDescription = state.title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        if (state.localFilePath.isNotEmpty() && File(state.localFilePath).exists()) {
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize(),
+                                factory = { ctx ->
+                                    VideoView(ctx).apply {
+                                        setVideoPath(state.localFilePath)
+                                        setOnPreparedListener { mp ->
+                                            mp.isLooping = true
+                                            if (state.isPlaying) start()
+                                        }
+                                    }
+                                },
+                                update = { vv ->
+                                    if (state.isPlaying) {
+                                        if (!vv.isPlaying) vv.start()
+                                    } else {
+                                        if (vv.isPlaying) vv.pause()
+                                    }
+                                }
+                            )
+                        } else {
+                            AsyncImage(
+                                model = state.thumbnailUrl.ifEmpty { "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&auto=format&fit=crop" },
+                                contentDescription = state.title,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                     } else {
                         // YouTube Premium Audio Only Canvas
                         Box(

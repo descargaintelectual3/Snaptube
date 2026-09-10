@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.widget.VideoView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,8 +25,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,19 +58,25 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.model.MediaType
 import com.example.data.model.WhatsAppStatusItem
-import com.example.ui.theme.SnaptubeYellow
+import java.io.File
 
 @Composable
 fun StatusSaverScreen(
     statuses: List<WhatsAppStatusItem>,
     onSaveStatus: (WhatsAppStatusItem) -> Unit,
+    onScanDevice: () -> Unit = {},
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
+    var previewStatus by remember { mutableStateOf<WhatsAppStatusItem?>(null) }
+
     val filteredStatuses = when (selectedTab) {
         0 -> statuses
         1 -> statuses.filter { it.mediaType != MediaType.VIDEO }
@@ -95,7 +106,7 @@ fun StatusSaverScreen(
                     Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Regresar")
                 }
                 Spacer(modifier = Modifier.width(4.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Descargador de Estados",
                         fontSize = 17.sp,
@@ -108,6 +119,69 @@ fun StatusSaverScreen(
                         color = Color(0xFF25D366),
                         fontWeight = FontWeight.SemiBold
                     )
+                }
+                IconButton(onClick = onScanDevice) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Escanear dispositivo",
+                        tint = Color(0xFF25D366)
+                    )
+                }
+            }
+        }
+
+        // WhatsApp Device Storage Scanner Banner
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFF25D366).copy(alpha = 0.12f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF25D366)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Escanear almacenamiento local",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Busca en Android/media/com.whatsapp/Media/.Statuses",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Button(
+                    onClick = onScanDevice,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF25D366),
+                        contentColor = Color.White
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text("Escanear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -150,7 +224,73 @@ fun StatusSaverScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(filteredStatuses, key = { it.id }) { item ->
-                StatusCard(item = item, onSave = { onSaveStatus(item) })
+                StatusCard(
+                    item = item,
+                    onPreview = { previewStatus = item },
+                    onSave = { onSaveStatus(item) }
+                )
+            }
+        }
+    }
+
+    // Full screen preview modal
+    previewStatus?.let { status ->
+        Dialog(
+            onDismissRequest = { previewStatus = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            ) {
+                if (status.mediaType == MediaType.VIDEO && status.localFilePath.isNotEmpty() && File(status.localFilePath).exists()) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            VideoView(ctx).apply {
+                                setVideoPath(status.localFilePath)
+                                setOnPreparedListener { it.isLooping = true; start() }
+                            }
+                        }
+                    )
+                } else {
+                    AsyncImage(
+                        model = status.thumbnailUrl,
+                        contentDescription = "Preview de estado",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                // Close button
+                IconButton(
+                    onClick = { previewStatus = null },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                ) {
+                    Icon(imageVector = Icons.Default.Close, contentDescription = "Cerrar", tint = Color.White)
+                }
+
+                // Save button bottom
+                Button(
+                    onClick = {
+                        onSaveStatus(status)
+                        previewStatus = null
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(24.dp)
+                        .fillMaxWidth(0.7f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366))
+                ) {
+                    Icon(imageVector = Icons.Default.Download, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Descargar a Galería", fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -159,11 +299,13 @@ fun StatusSaverScreen(
 @Composable
 private fun StatusCard(
     item: WhatsAppStatusItem,
+    onPreview: () -> Unit,
     onSave: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onPreview() }
             .testTag("status_card_${item.id}"),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

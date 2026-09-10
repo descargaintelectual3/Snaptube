@@ -253,7 +253,23 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             repository.addSearchQuery(query)
         }
-        _searchResults.value = repository.searchVideos(query, _selectedCategory.value)
+        val localMatches = repository.searchVideos(query, _selectedCategory.value)
+        _searchResults.value = localMatches
+
+        // Fetch genuine real-time YouTube search results for artist/song
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val liveResults = StreamExtractor.searchYouTube(query)
+                if (liveResults.isNotEmpty()) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        val combined = (liveResults + localMatches).distinctBy { it.id }
+                        _searchResults.value = combined
+                    }
+                }
+            } catch (_: Exception) {
+                // Keep local results if network error
+            }
+        }
     }
 
     fun clearSearchHistory() {
@@ -353,18 +369,19 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
 
     fun saveWaStatus(item: WhatsAppStatusItem) {
         viewModelScope.launch(Dispatchers.IO) {
-            val destDir = downloadEngine.snaptubeDir
-            val ext = if (item.mediaType == MediaType.VIDEO) "mp4" else "jpg"
-            val destFile = File(destDir, "WA_Status_${System.currentTimeMillis()}.$ext")
-            if (item.localFilePath.isNotEmpty() && File(item.localFilePath).exists()) {
-                File(item.localFilePath).copyTo(destFile, overwrite = true)
+            val sourceFile = File(item.localFilePath)
+            if (item.localFilePath.isNotEmpty() && sourceFile.exists()) {
+                val destDir = downloadEngine.snaptubeDir
+                val ext = if (item.mediaType == MediaType.VIDEO) "mp4" else "jpg"
+                val destFile = File(destDir, "WA_Status_${System.currentTimeMillis()}.$ext")
+                sourceFile.copyTo(destFile, overwrite = true)
+                _waStatuses.value = _waStatuses.value.map {
+                    if (it.id == item.id) it.copy(isSaved = true, localFilePath = destFile.absolutePath) else it
+                }
+                _toastMessage.value = "Estado guardado en ${destFile.name}"
             } else {
-                downloadEngine.writeFallbackValidMediaFile(destFile, item.mediaType)
+                _toastMessage.value = "El archivo de estado original no está disponible en el dispositivo"
             }
-            _waStatuses.value = _waStatuses.value.map {
-                if (it.id == item.id) it.copy(isSaved = true, localFilePath = destFile.absolutePath) else it
-            }
-            _toastMessage.value = "Estado guardado en ${destFile.name}"
         }
     }
 

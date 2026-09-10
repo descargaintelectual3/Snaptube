@@ -164,44 +164,94 @@ fun VideoPlayerModal(
                 ) {
                     // Video Content or Audio-Only Visualizer
                     if (!state.isAudioOnlyMode) {
-                        if (player != null) {
-                            // ExoPlayer hardware-accelerated surface
-                            AndroidView(
-                                modifier = Modifier.fillMaxSize(),
-                                factory = { ctx ->
-                                    PlayerView(ctx).apply {
-                                        this.player = player
-                                        useController = false
-                                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                        layoutParams = ViewGroup.LayoutParams(
-                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                            ViewGroup.LayoutParams.MATCH_PARENT
-                                        )
-                                    }
-                                },
-                                update = { pv ->
-                                    if (pv.player != player) {
-                                        pv.player = player
-                                    }
-                                }
-                            )
-                        } else if (state.localFilePath.isNotEmpty() && File(state.localFilePath).exists()) {
-                            AndroidView(
-                                modifier = Modifier.fillMaxSize(),
-                                factory = { ctx ->
-                                    VideoView(ctx).apply {
-                                        setVideoPath(state.localFilePath)
-                                        setOnPreparedListener { mp ->
-                                            mp.isLooping = true
-                                            if (state.isPlaying) start()
+                        val hasLocalFile = state.localFilePath.isNotEmpty() && File(state.localFilePath).exists() && File(state.localFilePath).length() > 500
+                        val isDirectStream = state.mediaUrl.isNotEmpty() && (
+                            state.mediaUrl.endsWith(".mp4") || state.mediaUrl.endsWith(".mp3") || state.mediaUrl.endsWith(".m4a") ||
+                            state.mediaUrl.endsWith(".webm") || state.mediaUrl.endsWith(".m3u8") || state.mediaUrl.contains("googlevideo.com")
+                        )
+                        val ytVideoId = remember(state.mediaUrl, state.id) {
+                            com.example.engine.StreamExtractor.extractVideoId(state.mediaUrl)
+                                ?: com.example.engine.StreamExtractor.extractVideoId(state.id)
+                        }
+
+                        if (hasLocalFile || isDirectStream) {
+                            if (player != null) {
+                                // ExoPlayer hardware-accelerated surface
+                                AndroidView(
+                                    modifier = Modifier.fillMaxSize(),
+                                    factory = { ctx ->
+                                        PlayerView(ctx).apply {
+                                            this.player = player
+                                            useController = false
+                                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                            layoutParams = ViewGroup.LayoutParams(
+                                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                                ViewGroup.LayoutParams.MATCH_PARENT
+                                            )
+                                        }
+                                    },
+                                    update = { pv ->
+                                        if (pv.player != player) {
+                                            pv.player = player
                                         }
                                     }
-                                },
-                                update = { vv ->
-                                    if (state.isPlaying) {
-                                        if (!vv.isPlaying) vv.start()
-                                    } else {
-                                        if (vv.isPlaying) vv.pause()
+                                )
+                            } else if (hasLocalFile) {
+                                AndroidView(
+                                    modifier = Modifier.fillMaxSize(),
+                                    factory = { ctx ->
+                                        VideoView(ctx).apply {
+                                            setVideoPath(state.localFilePath)
+                                            setOnPreparedListener { mp ->
+                                                mp.isLooping = true
+                                                if (state.isPlaying) start()
+                                            }
+                                        }
+                                    },
+                                    update = { vv ->
+                                        if (state.isPlaying) {
+                                            if (!vv.isPlaying) vv.start()
+                                        } else {
+                                            if (vv.isPlaying) vv.pause()
+                                        }
+                                    }
+                                )
+                            }
+                        } else if (ytVideoId != null) {
+                            // Genuine YouTube player embedding
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize(),
+                                factory = { ctx ->
+                                    android.webkit.WebView(ctx).apply {
+                                        settings.javaScriptEnabled = true
+                                        settings.domStorageEnabled = true
+                                        settings.mediaPlaybackRequiresUserGesture = false
+                                        settings.loadWithOverviewMode = true
+                                        settings.useWideViewPort = true
+                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                                        webChromeClient = android.webkit.WebChromeClient()
+                                        webViewClient = android.webkit.WebViewClient()
+                                        val html = """
+                                            <!DOCTYPE html>
+                                            <html>
+                                            <head>
+                                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                                <style>
+                                                    * { margin:0; padding:0; box-sizing:border-box; }
+                                                    body, html { width:100%; height:100%; background:#000; overflow:hidden; }
+                                                    iframe { width:100%; height:100%; border:none; }
+                                                </style>
+                                            </head>
+                                            <body>
+                                                <iframe 
+                                                    src="https://www.youtube-nocookie.com/embed/$ytVideoId?autoplay=1&playsinline=1&fs=1&rel=0&modestbranding=1" 
+                                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                                    allowfullscreen>
+                                                </iframe>
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
                                     }
                                 }
                             )

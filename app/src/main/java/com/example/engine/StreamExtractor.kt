@@ -44,29 +44,89 @@ object StreamExtractor {
         "https://vid.puffyan.us"
     )
 
-    // Genuine high-quality CDN fallback media streams
-    private val REAL_1080P_STREAMS = listOf(
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/person-bicycle-car-detection.mp4"
-    )
-    private val REAL_720P_STREAMS = listOf(
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-        "https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/big_buck_bunny.mp4"
-    )
-    private val REAL_480P_STREAMS = listOf(
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/car-detection.mp4"
-    )
-    private val REAL_360P_STREAMS = listOf(
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-        "https://raw.githubusercontent.com/intel-iot-devkit/sample-videos/master/bolt-detection.mp4"
-    )
-    private val REAL_MP3_HQ_STREAMS = listOf(
-        "https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/AirReview-Landmarks-02-ChasingCorporate.mp3"
-    )
-    private val REAL_M4A_STREAMS = listOf(
-        "https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/AirReview-Landmarks-02-ChasingCorporate.mp3"
-    )
+    // Genuine media stream resolver
+    suspend fun searchYouTube(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        try {
+            val endpoint = "https://www.youtube.com/youtubei/v1/search"
+            val payload = JSONObject().apply {
+                put("query", query)
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "WEB")
+                        put("clientVersion", "2.20231201.00.00")
+                        put("hl", "es")
+                        put("gl", "US")
+                    })
+                })
+            }
+
+            val request = Request.Builder()
+                .url(endpoint)
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("Content-Type", "application/json")
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful || response.body == null) return@withContext emptyList()
+
+            val jsonStr = response.body!!.string()
+            val root = JSONObject(jsonStr)
+            val results = mutableListOf<VideoItem>()
+
+            val contents = root.optJSONObject("contents")
+                ?.optJSONObject("twoColumnSearchResultsRenderer")
+                ?.optJSONObject("primaryContents")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents") ?: return@withContext emptyList()
+
+            for (i in 0 until contents.length()) {
+                val section = contents.optJSONObject(i) ?: continue
+                val itemSection = section.optJSONObject("itemSectionRenderer") ?: continue
+                val itemContents = itemSection.optJSONArray("contents") ?: continue
+
+                for (j in 0 until itemContents.length()) {
+                    val it = itemContents.optJSONObject(j) ?: continue
+                    val vr = it.optJSONObject("videoRenderer") ?: continue
+                    val videoId = vr.optString("videoId")
+                    if (videoId.isNullOrBlank()) continue
+
+                    val titleRuns = vr.optJSONObject("title")?.optJSONArray("runs")
+                    val title = if (titleRuns != null && titleRuns.length() > 0) {
+                        titleRuns.optJSONObject(0)?.optString("text") ?: "Video"
+                    } else "Video"
+
+                    val ownerRuns = vr.optJSONObject("ownerText")?.optJSONArray("runs")
+                    val channel = if (ownerRuns != null && ownerRuns.length() > 0) {
+                        ownerRuns.optJSONObject(0)?.optString("text") ?: "YouTube"
+                    } else "YouTube"
+
+                    val duration = vr.optJSONObject("lengthText")?.optString("simpleText") ?: "3:30"
+                    val viewCount = vr.optJSONObject("viewCountText")?.optString("simpleText") ?: "Vistas"
+
+                    results.add(
+                        VideoItem(
+                            id = videoId,
+                            title = title,
+                            channel = channel,
+                            duration = duration,
+                            viewCount = viewCount,
+                            publishedTime = "YouTube Oficial",
+                            thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                            videoUrl = "https://www.youtube.com/watch?v=$videoId",
+                            category = "YouTube",
+                            qualityOptions = com.example.data.repository.MediaCatalog.getDefaultQualityOptions(28.0)
+                        )
+                    )
+                }
+            }
+            results
+        } catch (e: Exception) {
+            Log.w(TAG, "Search error: ${e.message}")
+            emptyList()
+        }
+    }
 
     /**
      * Extracts YouTube 11-char video ID from various URL formats
@@ -188,7 +248,7 @@ object StreamExtractor {
             }
         }
 
-        val resolvedAudioUrl = audioStreamUrl ?: REAL_MP3_HQ_STREAMS.first()
+        val resolvedAudioUrl = audioStreamUrl ?: ""
 
         // Audio options
         qualityOptions.add(
@@ -254,7 +314,7 @@ object StreamExtractor {
                 mediaType = MediaType.VIDEO,
                 approximateSizeBytes = (lengthSeconds * 280 * 1024L).coerceAtLeast(38 * 1024 * 1024L),
                 approximateSizeFormatted = "%.1f MB".format((lengthSeconds * 280.0) / 1024.0),
-                directStreamUrl = stream720p ?: REAL_1080P_STREAMS.first(),
+                directStreamUrl = stream720p ?: "",
                 mimeType = "video/mp4"
             )
         )
@@ -269,7 +329,7 @@ object StreamExtractor {
                 approximateSizeBytes = (lengthSeconds * 150 * 1024L).coerceAtLeast(20 * 1024 * 1024L),
                 approximateSizeFormatted = "%.1f MB".format((lengthSeconds * 150.0) / 1024.0),
                 isRecommended = true,
-                directStreamUrl = stream720p ?: REAL_720P_STREAMS.first(),
+                directStreamUrl = stream720p ?: "",
                 mimeType = "video/mp4"
             )
         )
@@ -283,7 +343,7 @@ object StreamExtractor {
                 mediaType = MediaType.VIDEO,
                 approximateSizeBytes = (lengthSeconds * 80 * 1024L).coerceAtLeast(12 * 1024 * 1024L),
                 approximateSizeFormatted = "%.1f MB".format((lengthSeconds * 80.0) / 1024.0),
-                directStreamUrl = stream360p ?: REAL_480P_STREAMS.first(),
+                directStreamUrl = stream360p ?: "",
                 mimeType = "video/mp4"
             )
         )
@@ -297,7 +357,7 @@ object StreamExtractor {
                 mediaType = MediaType.VIDEO,
                 approximateSizeBytes = (lengthSeconds * 45 * 1024L).coerceAtLeast(7 * 1024 * 1024L),
                 approximateSizeFormatted = "%.1f MB".format((lengthSeconds * 45.0) / 1024.0),
-                directStreamUrl = stream360p ?: REAL_360P_STREAMS.first(),
+                directStreamUrl = stream360p ?: "",
                 mimeType = "video/mp4"
             )
         )
@@ -345,7 +405,7 @@ object StreamExtractor {
         if (audioStreams.length() > 0) {
             bestAudioUrl = audioStreams.getJSONObject(0).optString("url")
         }
-        val audioUrl = bestAudioUrl ?: REAL_MP3_HQ_STREAMS.first()
+        val audioUrl = bestAudioUrl ?: ""
 
         qualityOptions.add(
             DownloadQualityOption(
@@ -424,7 +484,7 @@ object StreamExtractor {
                     approximateSizeBytes = 25 * 1024 * 1024L,
                     approximateSizeFormatted = "25.0 MB",
                     isRecommended = true,
-                    directStreamUrl = REAL_720P_STREAMS.first(),
+                    directStreamUrl = "",
                     mimeType = "video/mp4"
                 )
             )
@@ -500,7 +560,7 @@ object StreamExtractor {
                 approximateSizeBytes = lengthSeconds * 40 * 1024L,
                 approximateSizeFormatted = "%.1f MB".format((lengthSeconds * 40.0) / 1024.0),
                 isRecommended = true,
-                directStreamUrl = primaryVideoUrl ?: REAL_MP3_HQ_STREAMS.first(),
+                directStreamUrl = primaryVideoUrl ?: "",
                 mimeType = "audio/mpeg"
             )
         )
@@ -512,28 +572,52 @@ object StreamExtractor {
             title = title,
             channel = channel,
             duration = durationFormatted,
-            viewCount = "Invidious",
+            viewCount = "YouTube",
             publishedTime = "Disponible",
             thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
             videoUrl = primaryVideoUrl ?: "https://www.youtube.com/watch?v=$videoId",
-            category = "Invidious",
+            category = "YouTube",
             qualityOptions = qualityOptions
         )
     }
 
     /**
-     * Builds standard authentic options for direct web links or offline situations
+     * Builds authentic options for direct web links or YouTube videos
      */
     fun buildDirectOrFallbackItem(inputUrl: String, videoId: String?): VideoItem {
         val cleanId = videoId ?: "custom_${Math.abs(inputUrl.hashCode())}"
         val isDirectAudio = inputUrl.contains(".mp3") || inputUrl.contains(".m4a") || inputUrl.contains(".aac")
         val isDirectVideo = inputUrl.contains(".mp4") || inputUrl.contains(".webm") || inputUrl.contains(".mkv")
 
-        val title = if (videoId != null) {
-            "Video ($videoId)"
+        var title = if (videoId != null) {
+            "YouTube Video ($videoId)"
         } else {
             inputUrl.substringAfterLast("/").substringBefore("?").takeIf { it.isNotBlank() } ?: "Descarga Multimedia"
         }
+        var channel = if (videoId != null) "YouTube" else if (isDirectAudio) "Audio Web" else "Video Web"
+
+        // Fetch genuine title from YouTube oEmbed if videoId is available
+        if (videoId != null) {
+            try {
+                val oEmbedUrl = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$videoId&format=json"
+                val req = Request.Builder()
+                    .url(oEmbedUrl)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build()
+                val res = httpClient.newCall(req).execute()
+                if (res.isSuccessful && res.body != null) {
+                    val json = JSONObject(res.body!!.string())
+                    val realTitle = json.optString("title")
+                    val realAuthor = json.optString("author_name")
+                    if (realTitle.isNotBlank()) title = realTitle
+                    if (realAuthor.isNotBlank()) channel = realAuthor
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "oEmbed error: ${e.message}")
+            }
+        }
+
+        val directUrl = if (isDirectAudio || isDirectVideo) inputUrl else ""
 
         val qualityOptions = mutableListOf(
             DownloadQualityOption(
@@ -544,7 +628,7 @@ object StreamExtractor {
                 approximateSizeBytes = 9 * 1024 * 1024L,
                 approximateSizeFormatted = "9.0 MB",
                 isRecommended = isDirectAudio,
-                directStreamUrl = if (isDirectAudio) inputUrl else REAL_MP3_HQ_STREAMS.first(),
+                directStreamUrl = directUrl,
                 mimeType = "audio/mpeg"
             ),
             DownloadQualityOption(
@@ -554,7 +638,7 @@ object StreamExtractor {
                 mediaType = MediaType.AUDIO,
                 approximateSizeBytes = 3800 * 1024L,
                 approximateSizeFormatted = "3.8 MB",
-                directStreamUrl = if (isDirectAudio) inputUrl else REAL_MP3_HQ_STREAMS.first(),
+                directStreamUrl = directUrl,
                 mimeType = "audio/mpeg"
             ),
             DownloadQualityOption(
@@ -564,7 +648,7 @@ object StreamExtractor {
                 mediaType = MediaType.AUDIO,
                 approximateSizeBytes = 3600 * 1024L,
                 approximateSizeFormatted = "3.6 MB",
-                directStreamUrl = if (isDirectAudio) inputUrl else REAL_M4A_STREAMS.first(),
+                directStreamUrl = directUrl,
                 mimeType = "audio/mp4"
             ),
             DownloadQualityOption(
@@ -574,7 +658,7 @@ object StreamExtractor {
                 mediaType = MediaType.VIDEO,
                 approximateSizeBytes = 48 * 1024 * 1024L,
                 approximateSizeFormatted = "48.0 MB",
-                directStreamUrl = if (isDirectVideo) inputUrl else REAL_1080P_STREAMS.first(),
+                directStreamUrl = directUrl,
                 mimeType = "video/mp4"
             ),
             DownloadQualityOption(
@@ -585,7 +669,7 @@ object StreamExtractor {
                 approximateSizeBytes = 24 * 1024 * 1024L,
                 approximateSizeFormatted = "24.0 MB",
                 isRecommended = !isDirectAudio,
-                directStreamUrl = if (isDirectVideo) inputUrl else REAL_720P_STREAMS.first(),
+                directStreamUrl = directUrl,
                 mimeType = "video/mp4"
             ),
             DownloadQualityOption(
@@ -595,7 +679,7 @@ object StreamExtractor {
                 mediaType = MediaType.VIDEO,
                 approximateSizeBytes = 14 * 1024 * 1024L,
                 approximateSizeFormatted = "14.0 MB",
-                directStreamUrl = if (isDirectVideo) inputUrl else REAL_480P_STREAMS.first(),
+                directStreamUrl = directUrl,
                 mimeType = "video/mp4"
             ),
             DownloadQualityOption(
@@ -605,7 +689,7 @@ object StreamExtractor {
                 mediaType = MediaType.VIDEO,
                 approximateSizeBytes = 8 * 1024 * 1024L,
                 approximateSizeFormatted = "8.0 MB",
-                directStreamUrl = if (isDirectVideo) inputUrl else REAL_360P_STREAMS.first(),
+                directStreamUrl = directUrl,
                 mimeType = "video/mp4"
             )
         )
@@ -613,13 +697,13 @@ object StreamExtractor {
         return VideoItem(
             id = cleanId,
             title = title,
-            channel = if (isDirectAudio) "Audio Web" else "Video Web",
+            channel = channel,
             duration = "3:45",
-            viewCount = "Enlace Web",
+            viewCount = "YouTube Oficial",
             publishedTime = "Online",
             thumbnailUrl = if (videoId != null) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=600&auto=format&fit=crop",
             videoUrl = inputUrl,
-            category = "Web",
+            category = "Música",
             qualityOptions = qualityOptions
         )
     }

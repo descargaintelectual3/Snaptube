@@ -334,72 +334,15 @@ class DownloadEngine(
             downloadedFromNetwork = false
         }
 
-        // Fallback: If network failed or offline, generate standard valid media file
+        // If network download failed, clean up any incomplete/empty file
         if (!downloadedFromNetwork || !targetFile.exists() || targetFile.length() == 0L) {
-            writeFallbackValidMediaFile(targetFile, task.mediaType)
-        }
-
-        return@withContext targetFile.exists() && targetFile.length() > 0
-    }
-
-    fun writeFallbackValidMediaFile(targetFile: File, mediaType: MediaType) {
-        targetFile.parentFile?.mkdirs()
-        FileOutputStream(targetFile).use { fos ->
-            if (mediaType == MediaType.AUDIO) {
-                val id3 = byteArrayOf('I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(), 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A)
-                fos.write(id3)
-                fos.write(ByteArray(10))
-
-                val frame = ByteArray(417)
-                frame[0] = 0xFF.toByte()
-                frame[1] = 0xFB.toByte()
-                frame[2] = 0x90.toByte()
-                frame[3] = 0x64.toByte()
-                repeat(300) {
-                    fos.write(frame)
-                }
-            } else {
-                val ftyp = byteArrayOf(
-                    0x00, 0x00, 0x00, 0x20,
-                    'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(),
-                    'i'.code.toByte(), 's'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte(),
-                    0x00, 0x00, 0x02, 0x00,
-                    'm'.code.toByte(), 'p'.code.toByte(), '4'.code.toByte(), '1'.code.toByte(),
-                    'm'.code.toByte(), 'p'.code.toByte(), '4'.code.toByte(), '2'.code.toByte(),
-                    'i'.code.toByte(), 's'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte(),
-                    0x00, 0x00, 0x00, 0x00
-                )
-                fos.write(ftyp)
-
-                val payloadSize = 256 * 1024
-                val mdatHeader = byteArrayOf(
-                    ((payloadSize + 8) shr 24).toByte(),
-                    ((payloadSize + 8) shr 16).toByte(),
-                    ((payloadSize + 8) shr 8).toByte(),
-                    ((payloadSize + 8) and 0xFF).toByte(),
-                    'm'.code.toByte(), 'd'.code.toByte(), 'a'.code.toByte(), 't'.code.toByte()
-                )
-                fos.write(mdatHeader)
-                fos.write(ByteArray(payloadSize))
-
-                val moovData = byteArrayOf(
-                    0x00, 0x00, 0x00, 0x30,
-                    'm'.code.toByte(), 'o'.code.toByte(), 'o'.code.toByte(), 'v'.code.toByte(),
-                    0x00, 0x00, 0x00, 0x28,
-                    'm'.code.toByte(), 'v'.code.toByte(), 'h'.code.toByte(), 'd'.code.toByte(),
-                    0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x03, 0xE8.toByte(),
-                    0x00, 0x00, 0x27, 0x10.toByte(),
-                    0x00, 0x01, 0x00, 0x00,
-                    0x01, 0x00,
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-                )
-                fos.write(moovData)
+            if (targetFile.exists()) {
+                targetFile.delete()
             }
-            fos.flush()
+            return@withContext false
         }
+
+        return@withContext true
     }
 
     fun getShareIntent(task: DownloadTaskEntity): Intent? {

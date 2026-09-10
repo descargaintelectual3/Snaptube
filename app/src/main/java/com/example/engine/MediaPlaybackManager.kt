@@ -2,6 +2,7 @@ package com.example.engine
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -82,6 +83,10 @@ class MediaPlaybackManager(
     private val context: Context? = null,
     private val repository: SnaptubeRepository? = null
 ) {
+    companion object {
+        private const val TAG = "MediaPlaybackManager"
+    }
+
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
@@ -137,6 +142,14 @@ class MediaPlaybackManager(
                                 }
                             }
                         }
+
+                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            Log.w(TAG, "ExoPlayer playback error intercepted gracefully: ${error.message}")
+                            _playbackState.value = _playbackState.value.copy(
+                                isBuffering = false,
+                                isPlaying = false
+                            )
+                        }
                     })
                 }
         } catch (_: Exception) {
@@ -149,6 +162,21 @@ class MediaPlaybackManager(
         _playbackState.value = _playbackState.value.copy(
             queue = MediaCatalog.sampleVideos
         )
+    }
+
+    private fun isDirectMediaStream(url: String): Boolean {
+        if (url.isBlank()) return false
+        val clean = url.lowercase().split("?")[0]
+        return clean.endsWith(".mp4") ||
+                clean.endsWith(".mp3") ||
+                clean.endsWith(".m4a") ||
+                clean.endsWith(".webm") ||
+                clean.endsWith(".m3u8") ||
+                clean.endsWith(".aac") ||
+                clean.endsWith(".wav") ||
+                clean.endsWith(".ogg") ||
+                clean.endsWith(".mkv") ||
+                url.contains("googlevideo.com/videoplayback")
     }
 
     fun playMedia(
@@ -200,32 +228,44 @@ class MediaPlaybackManager(
             activeChapterTitle = generatedChapters.firstOrNull()?.title ?: ""
         )
 
-        // Setup ExoPlayer if available
+        // Setup ExoPlayer if available and media is a valid local file or direct stream
         exoPlayer?.let { player ->
             try {
-                val uri = if (localFilePath.isNotEmpty() && File(localFilePath).exists()) {
-                    Uri.fromFile(File(localFilePath))
+                val hasLocalFile = localFilePath.isNotEmpty() && File(localFilePath).exists() && File(localFilePath).length() > 500
+                val isDirectStream = isDirectMediaStream(mediaUrl)
+
+                if (hasLocalFile || isDirectStream) {
+                    val uri = if (hasLocalFile) {
+                        Uri.fromFile(File(localFilePath))
+                    } else {
+                        Uri.parse(mediaUrl)
+                    }
+
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(uri)
+                        .setMediaId(id)
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(title)
+                                .setArtist(subtitle)
+                                .setArtworkUri(Uri.parse(thumbnailUrl))
+                                .build()
+                        )
+                        .build()
+
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    player.playbackParameters = player.playbackParameters.withSpeed(_playbackState.value.playbackSpeed)
+                    player.playWhenReady = true
                 } else {
-                    Uri.parse(mediaUrl)
+                    // For web / YouTube pages, stop ExoPlayer; VideoPlayerModal will render the YouTube player
+                    player.stop()
+                    player.clearMediaItems()
+                    _playbackState.value = _playbackState.value.copy(isBuffering = false)
                 }
-
-                val mediaItem = MediaItem.Builder()
-                    .setUri(uri)
-                    .setMediaId(id)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(title)
-                            .setArtist(subtitle)
-                            .setArtworkUri(Uri.parse(thumbnailUrl))
-                            .build()
-                    )
-                    .build()
-
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.playbackParameters = player.playbackParameters.withSpeed(_playbackState.value.playbackSpeed)
-                player.playWhenReady = true
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "Error setting up ExoPlayer: ${e.message}")
+            }
         }
 
         startProgressTracker()

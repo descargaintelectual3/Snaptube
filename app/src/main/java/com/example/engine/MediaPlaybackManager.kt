@@ -1,7 +1,18 @@
 package com.example.engine
 
+import android.content.Context
+import android.net.Uri
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import com.example.data.model.VideoChapter
 import com.example.data.model.VideoItem
 import com.example.data.repository.MediaCatalog
+import com.example.data.repository.SnaptubeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -9,7 +20,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 
 data class PlaybackState(
     val id: String = "",
@@ -20,6 +33,7 @@ data class PlaybackState(
     val isVideo: Boolean = false,
     val isAudioOnlyMode: Boolean = false, // YouTube Premium background/audio-only
     val isPlaying: Boolean = false,
+    val isBuffering: Boolean = false,
     val currentPositionSeconds: Int = 0,
     val totalDurationSeconds: Int = 240,
     val isMiniPlayerVisible: Boolean = false,
@@ -36,7 +50,11 @@ data class PlaybackState(
     val brightnessLevel: Float = 0.7f,
     val volumeLevel: Float = 0.8f,
     val localFilePath: String = "",
-    val isOfflineMedia: Boolean = false
+    val isOfflineMedia: Boolean = false,
+    val isSubtitlesEnabled: Boolean = false,
+    val activeSubtitleText: String = "",
+    val chapters: List<VideoChapter> = emptyList(),
+    val activeChapterTitle: String = ""
 ) {
     val progressFraction: Float
         get() = if (totalDurationSeconds > 0) {
@@ -58,12 +76,73 @@ data class PlaybackState(
         }
 }
 
-class MediaPlaybackManager(private val scope: CoroutineScope) {
+@UnstableApi
+class MediaPlaybackManager(
+    private val scope: CoroutineScope,
+    private val context: Context? = null,
+    private val repository: SnaptubeRepository? = null
+) {
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
-    private var tickerJob: Job? = null
+    private var progressTrackerJob: Job? = null
     private var sleepTimerJob: Job? = null
+
+    val exoPlayer: ExoPlayer? = context?.let { ctx ->
+        try {
+            ExoPlayer.Builder(ctx.applicationContext)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                        .setUsage(C.USAGE_MEDIA)
+                        .build(),
+                    true
+                )
+                .setHandleAudioBecomingNoisy(true)
+                .setWakeMode(C.WAKE_MODE_NETWORK)
+                .build().apply {
+                    addListener(object : Player.Listener {
+                        override fun onIsPlayingChanged(isPlaying: Boolean) {
+                            _playbackState.value = _playbackState.value.copy(isPlaying = isPlaying)
+                            if (isPlaying) {
+                                startProgressTracker()
+                            } else {
+                                progressTrackerJob?.cancel()
+                            }
+                        }
+
+                        override fun onPlaybackStateChanged(playbackState: Int) {
+                            when (playbackState) {
+                                Player.STATE_BUFFERING -> {
+                                    _playbackState.value = _playbackState.value.copy(isBuffering = true)
+                                }
+                                Player.STATE_READY -> {
+                                    val durSecs = (duration / 1000L).toInt().coerceAtLeast(1)
+                                    _playbackState.value = _playbackState.value.copy(
+                                        isBuffering = false,
+                                        totalDurationSeconds = if (durSecs > 0) durSecs else _playbackState.value.totalDurationSeconds
+                                    )
+                                }
+                                Player.STATE_ENDED -> {
+                                    _playbackState.value = _playbackState.value.copy(isPlaying = false, isBuffering = false)
+                                    if (_playbackState.value.isLoopMode) {
+                                        seekToSeconds(0)
+                                        play()
+                                    } else if (_playbackState.value.isAutoplayEnabled) {
+                                        playNext()
+                                    }
+                                }
+                                Player.STATE_IDLE -> {
+                                    _playbackState.value = _playbackState.value.copy(isBuffering = false)
+                                }
+                            }
+                        }
+                    })
+                }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     init {
         // Initialize queue with default recommended catalog
@@ -80,10 +159,11 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
         mediaUrl: String,
         isVideo: Boolean,
         openFullScreen: Boolean = isVideo,
-        localFilePath: String = ""
+        localFilePath: String = "",
+        isOffline: Boolean = localFilePath.isNotEmpty()
     ) {
-        tickerJob?.cancel()
-        // Ensure queue contains relevant videos around this one
+        progressTrackerJob?.cancel()
+
         val catalog = MediaCatalog.sampleVideos
         val queueList = if (catalog.any { it.id == id }) {
             val currentIndex = catalog.indexOfFirst { it.id == id }
@@ -91,6 +171,9 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
         } else {
             catalog
         }
+
+        // Generate chapters for this video
+        val generatedChapters = generateChaptersForVideo(title)
 
         _playbackState.value = PlaybackState(
             id = id,
@@ -112,55 +195,144 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
             queue = queueList,
             sleepTimerMinutesRemaining = _playbackState.value.sleepTimerMinutesRemaining,
             localFilePath = localFilePath,
-            isOfflineMedia = localFilePath.isNotEmpty()
+            isOfflineMedia = isOffline || localFilePath.isNotEmpty(),
+            chapters = generatedChapters,
+            activeChapterTitle = generatedChapters.firstOrNull()?.title ?: ""
         )
-        startTicker()
+
+        // Setup ExoPlayer if available
+        exoPlayer?.let { player ->
+            try {
+                val uri = if (localFilePath.isNotEmpty() && File(localFilePath).exists()) {
+                    Uri.fromFile(File(localFilePath))
+                } else {
+                    Uri.parse(mediaUrl)
+                }
+
+                val mediaItem = MediaItem.Builder()
+                    .setUri(uri)
+                    .setMediaId(id)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(title)
+                            .setArtist(subtitle)
+                            .setArtworkUri(Uri.parse(thumbnailUrl))
+                            .build()
+                    )
+                    .build()
+
+                player.setMediaItem(mediaItem)
+                player.prepare()
+                player.playbackParameters = player.playbackParameters.withSpeed(_playbackState.value.playbackSpeed)
+                player.playWhenReady = true
+            } catch (_: Exception) {}
+        }
+
+        startProgressTracker()
+    }
+
+    private fun generateChaptersForVideo(title: String): List<VideoChapter> {
+        return listOf(
+            VideoChapter("0:00 - Introducción", 0, "0:00"),
+            VideoChapter("0:45 - Lo más destacado", 45, "0:45"),
+            VideoChapter("1:30 - Momento clave", 90, "1:30"),
+            VideoChapter("2:40 - Clímax y desarrollo", 160, "2:40"),
+            VideoChapter("3:30 - Cierre y créditos", 210, "3:30")
+        )
+    }
+
+    fun play() {
+        if (exoPlayer != null) {
+            exoPlayer.play()
+        } else {
+            _playbackState.value = _playbackState.value.copy(isPlaying = true)
+            startProgressTracker()
+        }
+    }
+
+    fun pause() {
+        if (exoPlayer != null) {
+            exoPlayer.pause()
+        } else {
+            _playbackState.value = _playbackState.value.copy(isPlaying = false)
+            progressTrackerJob?.cancel()
+        }
     }
 
     fun togglePlayPause() {
-        val current = _playbackState.value
-        val nextPlaying = !current.isPlaying
-        _playbackState.value = current.copy(isPlaying = nextPlaying)
-        if (nextPlaying) {
-            startTicker()
+        if (exoPlayer != null) {
+            if (exoPlayer.isPlaying) {
+                exoPlayer.pause()
+            } else {
+                exoPlayer.play()
+            }
         } else {
-            tickerJob?.cancel()
+            val current = _playbackState.value
+            val nextPlaying = !current.isPlaying
+            _playbackState.value = current.copy(isPlaying = nextPlaying)
+            if (nextPlaying) {
+                startProgressTracker()
+            } else {
+                progressTrackerJob?.cancel()
+            }
         }
     }
 
     fun seekToFraction(fraction: Float) {
         val current = _playbackState.value
-        val newPos = (fraction * current.totalDurationSeconds).toInt()
-        _playbackState.value = current.copy(currentPositionSeconds = newPos)
+        val newPosSecs = (fraction * current.totalDurationSeconds).toInt()
+        seekToSeconds(newPosSecs)
+    }
+
+    fun seekToSeconds(seconds: Int) {
+        val current = _playbackState.value
+        val clamped = seconds.coerceIn(0, current.totalDurationSeconds)
+        if (exoPlayer != null) {
+            exoPlayer.seekTo(clamped * 1000L)
+        }
+        _playbackState.value = current.copy(currentPositionSeconds = clamped)
+        updateActiveChapter(clamped)
     }
 
     fun forward10() {
         val current = _playbackState.value
         val newPos = (current.currentPositionSeconds + 10).coerceAtMost(current.totalDurationSeconds)
-        _playbackState.value = current.copy(currentPositionSeconds = newPos)
+        seekToSeconds(newPos)
     }
 
     fun rewind10() {
         val current = _playbackState.value
         val newPos = (current.currentPositionSeconds - 10).coerceAtLeast(0)
-        _playbackState.value = current.copy(currentPositionSeconds = newPos)
+        seekToSeconds(newPos)
     }
 
     fun setSpeed(speed: Float) {
         _playbackState.value = _playbackState.value.copy(playbackSpeed = speed)
+        exoPlayer?.setPlaybackSpeed(speed)
     }
 
     fun toggleShuffle() {
         _playbackState.value = _playbackState.value.copy(isShuffle = !_playbackState.value.isShuffle)
+        exoPlayer?.shuffleModeEnabled = _playbackState.value.isShuffle
     }
 
     fun toggleRepeat() {
-        _playbackState.value = _playbackState.value.copy(isRepeat = !_playbackState.value.isRepeat)
+        val nextRepeat = !_playbackState.value.isRepeat
+        _playbackState.value = _playbackState.value.copy(isRepeat = nextRepeat)
+        exoPlayer?.repeatMode = if (nextRepeat) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
     }
 
     fun toggleAudioOnlyMode() {
         val current = _playbackState.value
-        _playbackState.value = current.copy(isAudioOnlyMode = !current.isAudioOnlyMode)
+        val nextMode = !current.isAudioOnlyMode
+        _playbackState.value = current.copy(isAudioOnlyMode = nextMode)
+        exoPlayer?.let { player ->
+            try {
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, nextMode)
+                    .build()
+            } catch (_: Exception) {}
+        }
     }
 
     fun toggleAutoplay() {
@@ -170,11 +342,49 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
 
     fun setPlaybackQuality(quality: String) {
         _playbackState.value = _playbackState.value.copy(selectedQuality = quality)
+        exoPlayer?.let { player ->
+            try {
+                val paramsBuilder = player.trackSelectionParameters.buildUpon()
+                when {
+                    quality.contains("Audio", ignoreCase = true) -> {
+                        paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
+                    }
+                    quality.contains("4K", ignoreCase = true) -> {
+                        paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
+                            .setMaxVideoSize(3840, 2160)
+                    }
+                    quality.contains("1080p", ignoreCase = true) -> {
+                        paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
+                            .setMaxVideoSize(1920, 1080)
+                    }
+                    quality.contains("720p", ignoreCase = true) -> {
+                        paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
+                            .setMaxVideoSize(1280, 720)
+                    }
+                    else -> {
+                        paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
+                            .setMaxVideoSize(854, 480)
+                    }
+                }
+                player.trackSelectionParameters = paramsBuilder.build()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun toggleSubtitles() {
+        val current = _playbackState.value
+        val nextEnabled = !current.isSubtitlesEnabled
+        _playbackState.value = current.copy(
+            isSubtitlesEnabled = nextEnabled,
+            activeSubtitleText = if (nextEnabled) "Subtítulos activados (Español)" else ""
+        )
     }
 
     fun toggleLoopMode() {
         val current = _playbackState.value
-        _playbackState.value = current.copy(isLoopMode = !current.isLoopMode)
+        val nextLoop = !current.isLoopMode
+        _playbackState.value = current.copy(isLoopMode = nextLoop)
+        exoPlayer?.repeatMode = if (nextLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
     }
 
     fun toggleBackgroundPlayback() {
@@ -189,9 +399,11 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
     }
 
     fun setVolume(volume: Float) {
+        val clamped = volume.coerceIn(0.0f, 1.0f)
         _playbackState.value = _playbackState.value.copy(
-            volumeLevel = volume.coerceIn(0.0f, 1.0f)
+            volumeLevel = clamped
         )
+        exoPlayer?.volume = clamped
     }
 
     fun setSleepTimer(minutes: Int?) {
@@ -200,81 +412,168 @@ class MediaPlaybackManager(private val scope: CoroutineScope) {
         if (minutes != null && minutes > 0) {
             sleepTimerJob = scope.launch(Dispatchers.Default) {
                 var remaining = minutes
-                while (remaining > 0) {
-                    delay(60_000)
-                    remaining -= 1
+                while (remaining > 0 && isActive) {
+                    delay(60_000L)
+                    remaining--
                     _playbackState.value = _playbackState.value.copy(sleepTimerMinutesRemaining = remaining)
                 }
-                // Sleep timer completed, stop playback
-                togglePlayPause()
-                _playbackState.value = _playbackState.value.copy(sleepTimerMinutesRemaining = null)
+                // Smooth audio fade out before pause
+                fadeVolumeOutAndPause()
             }
         }
     }
 
-    fun playNextInQueue() {
-        val current = _playbackState.value
-        if (current.queue.isNotEmpty()) {
-            val next = if (current.isShuffle) {
-                current.queue.random()
+    private suspend fun fadeVolumeOutAndPause() {
+        val initialVol = _playbackState.value.volumeLevel
+        for (step in 10 downTo 0) {
+            val stepVol = initialVol * (step / 10f)
+            setVolume(stepVol)
+            delay(150L)
+        }
+        pause()
+        setVolume(initialVol)
+        _playbackState.value = _playbackState.value.copy(sleepTimerMinutesRemaining = null)
+    }
+
+    fun dismissPlayer() {
+        progressTrackerJob?.cancel()
+        sleepTimerJob?.cancel()
+        exoPlayer?.stop()
+        _playbackState.value = _playbackState.value.copy(
+            isPlaying = false,
+            isMiniPlayerVisible = false,
+            isFullScreenPlayerVisible = false
+        )
+    }
+
+    fun closePlayer() = dismissPlayer()
+    fun playNextInQueue() = playNext()
+
+    fun openFullScreen() {
+        _playbackState.value = _playbackState.value.copy(
+            isFullScreenPlayerVisible = true
+        )
+    }
+
+    fun closeFullScreen() {
+        _playbackState.value = _playbackState.value.copy(
+            isFullScreenPlayerVisible = false,
+            isMiniPlayerVisible = true
+        )
+    }
+
+    fun playNext() {
+        val currentQueue = _playbackState.value.queue
+        if (currentQueue.isNotEmpty()) {
+            val nextVideo = if (_playbackState.value.isShuffle) {
+                currentQueue.random()
             } else {
-                current.queue.first()
+                currentQueue.first()
             }
-            val remainingQueue = current.queue.filter { it.id != next.id }
+            val remainingQueue = currentQueue.filter { it.id != nextVideo.id }
             playMedia(
-                id = next.id,
-                title = next.title,
-                subtitle = next.channel,
-                thumbnailUrl = next.thumbnailUrl,
-                mediaUrl = next.videoUrl,
+                id = nextVideo.id,
+                title = nextVideo.title,
+                subtitle = nextVideo.channel,
+                thumbnailUrl = nextVideo.thumbnailUrl,
+                mediaUrl = nextVideo.videoUrl,
                 isVideo = true,
-                openFullScreen = current.isFullScreenPlayerVisible
+                openFullScreen = _playbackState.value.isFullScreenPlayerVisible
             )
             _playbackState.value = _playbackState.value.copy(queue = remainingQueue)
         }
     }
 
-    fun openFullScreen() {
-        _playbackState.value = _playbackState.value.copy(isFullScreenPlayerVisible = true)
+    fun playPrevious() {
+        seekToSeconds(0)
     }
 
-    fun closeFullScreen() {
-        _playbackState.value = _playbackState.value.copy(isFullScreenPlayerVisible = false)
+    fun playFromQueue(video: VideoItem) {
+        val currentQueue = _playbackState.value.queue.filter { it.id != video.id }
+        playMedia(
+            id = video.id,
+            title = video.title,
+            subtitle = video.channel,
+            thumbnailUrl = video.thumbnailUrl,
+            mediaUrl = video.videoUrl,
+            isVideo = true,
+            openFullScreen = _playbackState.value.isFullScreenPlayerVisible
+        )
+        _playbackState.value = _playbackState.value.copy(queue = currentQueue)
     }
 
-    fun closePlayer() {
-        tickerJob?.cancel()
-        sleepTimerJob?.cancel()
-        _playbackState.value = PlaybackState()
+    private fun updateActiveChapter(currentSecs: Int) {
+        val chapters = _playbackState.value.chapters
+        val currentChapter = chapters.lastOrNull { it.startTimeSeconds <= currentSecs }
+        if (currentChapter != null && currentChapter.title != _playbackState.value.activeChapterTitle) {
+            _playbackState.value = _playbackState.value.copy(activeChapterTitle = currentChapter.title)
+        }
     }
 
-    private fun startTicker() {
-        tickerJob?.cancel()
-        tickerJob = scope.launch(Dispatchers.Default) {
-            while (true) {
-                delay(1000)
+    private fun startProgressTracker() {
+        progressTrackerJob?.cancel()
+        progressTrackerJob = scope.launch(Dispatchers.Main) {
+            var counter = 0
+            while (isActive) {
                 val current = _playbackState.value
-                if (current.isPlaying) {
-                    if (current.currentPositionSeconds >= current.totalDurationSeconds) {
-                        if (current.isRepeat) {
-                            _playbackState.value = current.copy(currentPositionSeconds = 0)
-                        } else if (current.isAutoplayEnabled && current.queue.isNotEmpty()) {
-                            // YouTube Premium Autoplay
-                            launch(Dispatchers.Main) {
-                                playNextInQueue()
-                            }
-                            break
-                        } else {
-                            _playbackState.value = current.copy(isPlaying = false, currentPositionSeconds = 0)
-                            break
-                        }
-                    } else {
-                        _playbackState.value = current.copy(
-                            currentPositionSeconds = current.currentPositionSeconds + 1
+                if (!current.isPlaying) break
+
+                val newPos = if (exoPlayer != null && exoPlayer.isPlaying) {
+                    (exoPlayer.currentPosition / 1000L).toInt()
+                } else {
+                    current.currentPositionSeconds + 1
+                }
+
+                val dur = if (exoPlayer != null && exoPlayer.duration > 0) {
+                    (exoPlayer.duration / 1000L).toInt()
+                } else {
+                    current.totalDurationSeconds
+                }
+
+                if (newPos >= dur && dur > 0) {
+                    _playbackState.value = current.copy(
+                        currentPositionSeconds = dur,
+                        isPlaying = false
+                    )
+                    if (current.isLoopMode) {
+                        seekToSeconds(0)
+                        play()
+                    } else if (current.isAutoplayEnabled) {
+                        playNext()
+                    }
+                    break
+                } else {
+                    _playbackState.value = current.copy(
+                        currentPositionSeconds = newPos,
+                        totalDurationSeconds = dur
+                    )
+                    updateActiveChapter(newPos)
+                }
+
+                // Record progress to Room Watch History every 4 seconds
+                counter++
+                if (counter % 4 == 0 && repository != null && current.id.isNotEmpty()) {
+                    scope.launch(Dispatchers.IO) {
+                        repository.recordWatchProgress(
+                            videoId = current.id,
+                            title = current.title,
+                            channel = current.subtitle,
+                            thumbnailUrl = current.thumbnailUrl,
+                            videoUrl = current.mediaUrl,
+                            positionSeconds = newPos,
+                            durationSeconds = dur
                         )
                     }
                 }
+
+                delay(1000L)
             }
         }
+    }
+
+    fun release() {
+        progressTrackerJob?.cancel()
+        sleepTimerJob?.cancel()
+        exoPlayer?.release()
     }
 }

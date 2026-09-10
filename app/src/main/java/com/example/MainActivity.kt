@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.media3.common.util.UnstableApi
 import com.example.data.model.DownloadStatus
 import com.example.data.model.MediaType
 import com.example.data.repository.MediaCatalog
@@ -52,6 +53,7 @@ import com.example.ui.viewmodel.SnaptubeViewModel
 class MainActivity : ComponentActivity() {
     private val viewModel: SnaptubeViewModel by viewModels()
 
+    @UnstableApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -84,6 +86,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@UnstableApi
 @Composable
 fun SnaptubeApp(
     viewModel: SnaptubeViewModel,
@@ -116,6 +119,8 @@ fun SnaptubeApp(
     val vaultItems by viewModel.vaultItems.collectAsState()
     val searchHistory by viewModel.searchHistory.collectAsState()
     val playbackState by viewModel.playbackManager.playbackState.collectAsState()
+    val continueWatching by viewModel.continueWatching.collectAsState()
+    val watchHistory by viewModel.fullWatchHistory.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -208,6 +213,19 @@ fun SnaptubeApp(
                         onSearchKeywordClick = { keyword ->
                             viewModel.openSearch()
                             viewModel.performSearch(keyword)
+                        },
+                        continueWatching = continueWatching,
+                        onResumeWatching = { history ->
+                            viewModel.playbackManager.playMedia(
+                                id = history.videoId,
+                                title = history.title,
+                                subtitle = history.channel,
+                                thumbnailUrl = history.thumbnailUrl,
+                                mediaUrl = history.videoUrl,
+                                isVideo = true,
+                                openFullScreen = true
+                            )
+                            viewModel.playbackManager.seekToSeconds(history.lastPositionSeconds)
                         }
                     )
                 }
@@ -230,6 +248,7 @@ fun SnaptubeApp(
                         currentTab = myFilesTab,
                         onTabSelected = { viewModel.setMyFilesTab(it) },
                         allDownloads = allDownloads,
+                        watchHistory = watchHistory,
                         onPlayItem = { task ->
                             viewModel.playbackManager.playMedia(
                                 id = task.id,
@@ -241,6 +260,20 @@ fun SnaptubeApp(
                                 openFullScreen = true
                             )
                         },
+                        onPlayHistoryItem = { history ->
+                            viewModel.playbackManager.playMedia(
+                                id = history.videoId,
+                                title = history.title,
+                                subtitle = history.channel,
+                                thumbnailUrl = history.thumbnailUrl,
+                                mediaUrl = history.videoUrl,
+                                isVideo = true,
+                                openFullScreen = true
+                            )
+                            viewModel.playbackManager.seekToSeconds(history.lastPositionSeconds)
+                        },
+                        onClearHistory = { viewModel.clearWatchHistory() },
+                        onDeleteHistoryItem = { viewModel.removeFromWatchHistory(it) },
                         onPauseTask = { task -> viewModel.downloadEngine.pauseDownload(task) },
                         onResumeTask = { task -> viewModel.downloadEngine.resumeDownload(task) },
                         onCancelTask = { task -> viewModel.downloadEngine.cancelDownload(task) },
@@ -359,6 +392,7 @@ fun SnaptubeApp(
     // Full Screen Video Player (YouTube Premium Experience)
     VideoPlayerModal(
         state = playbackState,
+        player = viewModel.playbackManager.exoPlayer,
         onClose = { viewModel.playbackManager.closeFullScreen() },
         onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() },
         onSeek = { fraction -> viewModel.playbackManager.seekToFraction(fraction) },
@@ -371,6 +405,10 @@ fun SnaptubeApp(
         onPlayNext = { viewModel.playbackManager.playNextInQueue() },
         onToggleAutoplay = { viewModel.playbackManager.toggleAutoplay() },
         onSetSleepTimer = { minutes -> viewModel.playbackManager.setSleepTimer(minutes) },
+        onToggleSubtitles = { viewModel.playbackManager.toggleSubtitles() },
+        onToggleLoop = { viewModel.playbackManager.toggleLoopMode() },
+        onSelectQuality = { quality -> viewModel.playbackManager.setPlaybackQuality(quality) },
+        onToggleWatchLater = { video -> viewModel.toggleWatchLater(video) },
         onPlayItemFromQueue = { video ->
             viewModel.playbackManager.playMedia(
                 id = video.id,

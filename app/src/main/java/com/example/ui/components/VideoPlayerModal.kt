@@ -1,13 +1,10 @@
 package com.example.ui.components
 
+import android.view.ViewGroup
 import android.widget.VideoView
-import androidx.compose.ui.viewinterop.AndroidView
-import java.io.File
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -27,31 +24,39 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,8 +86,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.example.data.model.VideoItem
 import com.example.data.repository.MediaCatalog
@@ -90,10 +100,13 @@ import com.example.engine.PlaybackState
 import com.example.ui.theme.SnaptubeYellow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 
+@UnstableApi
 @Composable
 fun VideoPlayerModal(
     state: PlaybackState,
+    player: ExoPlayer? = null,
     onClose: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSeek: (Float) -> Unit,
@@ -106,7 +119,11 @@ fun VideoPlayerModal(
     onPlayNext: () -> Unit = {},
     onToggleAutoplay: () -> Unit = {},
     onSetSleepTimer: (Int?) -> Unit = {},
-    onPlayItemFromQueue: (VideoItem) -> Unit = {}
+    onPlayItemFromQueue: (VideoItem) -> Unit = {},
+    onToggleSubtitles: () -> Unit = {},
+    onToggleLoop: () -> Unit = {},
+    onSelectQuality: (String) -> Unit = {},
+    onToggleWatchLater: ((VideoItem) -> Unit)? = null
 ) {
     if (!state.isFullScreenPlayerVisible || !state.isVideo) return
 
@@ -116,6 +133,8 @@ fun VideoPlayerModal(
     var showDoubleTapLeftFeedback by remember { mutableStateOf(false) }
     var showDoubleTapRightFeedback by remember { mutableStateOf(false) }
     var showSleepTimerSheet by remember { mutableStateOf(false) }
+    var showQualitySheet by remember { mutableStateOf(false) }
+    var isSavedToWatchLater by remember { mutableStateOf(false) }
     var gestureIndicatorText by remember { mutableStateOf<String?>(null) }
     var gestureIndicatorIcon by remember { mutableStateOf<ImageVector?>(null) }
 
@@ -145,7 +164,28 @@ fun VideoPlayerModal(
                 ) {
                     // Video Content or Audio-Only Visualizer
                     if (!state.isAudioOnlyMode) {
-                        if (state.localFilePath.isNotEmpty() && File(state.localFilePath).exists()) {
+                        if (player != null) {
+                            // ExoPlayer hardware-accelerated surface
+                            AndroidView(
+                                modifier = Modifier.fillMaxSize(),
+                                factory = { ctx ->
+                                    PlayerView(ctx).apply {
+                                        this.player = player
+                                        useController = false
+                                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                        layoutParams = ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                    }
+                                },
+                                update = { pv ->
+                                    if (pv.player != player) {
+                                        pv.player = player
+                                    }
+                                }
+                            )
+                        } else if (state.localFilePath.isNotEmpty() && File(state.localFilePath).exists()) {
                             AndroidView(
                                 modifier = Modifier.fillMaxSize(),
                                 factory = { ctx ->
@@ -217,6 +257,35 @@ fun VideoPlayerModal(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    // Buffering Indicator
+                    if (state.isBuffering) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .align(Alignment.Center),
+                            color = SnaptubeYellow,
+                            strokeWidth = 3.dp
+                        )
+                    }
+
+                    // Subtitles (CC) Overlay
+                    if (state.isSubtitlesEnabled) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = if (showControls) 54.dp else 16.dp)
+                                .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (state.activeSubtitleText.isNotEmpty()) state.activeSubtitleText else "♪ ${state.title} ♪",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
 
@@ -349,7 +418,7 @@ fun VideoPlayerModal(
                                 .background(
                                     Brush.verticalGradient(
                                         colors = listOf(
-                                            Color.Black.copy(alpha = 0.75f),
+                                            Color.Black.copy(alpha = 0.8f),
                                             Color.Transparent,
                                             Color.Black.copy(alpha = 0.9f)
                                         )
@@ -357,7 +426,7 @@ fun VideoPlayerModal(
                                 )
                         )
 
-                        // Top Bar: Minimize, Title, Audio/Video Switch, PiP button
+                        // Top Bar: Minimize, Title, CC, Quality, Loop, Audio/Video Switch, PiP button
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -378,22 +447,58 @@ fun VideoPlayerModal(
                                     tint = Color.White
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = state.title,
                                 color = Color.White,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
 
+                            // CC Subtitles Button
+                            IconButton(
+                                onClick = onToggleSubtitles,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(if (state.isSubtitlesEnabled) SnaptubeYellow else Color.White.copy(alpha = 0.2f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Subtitles,
+                                    contentDescription = "Subtítulos",
+                                    tint = if (state.isSubtitlesEnabled) Color.Black else Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            // Loop Button
+                            IconButton(
+                                onClick = onToggleLoop,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(if (state.isLoopMode) SnaptubeYellow else Color.White.copy(alpha = 0.2f))
+                            ) {
+                                Icon(
+                                    imageVector = if (state.isLoopMode) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                                    contentDescription = "Repetir",
+                                    tint = if (state.isLoopMode) Color.Black else Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
                             // YouTube Premium Audio/Video Toggle
                             IconButton(
                                 onClick = onToggleAudioOnly,
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(32.dp)
                                     .clip(CircleShape)
                                     .background(if (state.isAudioOnlyMode) SnaptubeYellow else Color.White.copy(alpha = 0.2f))
                             ) {
@@ -401,17 +506,17 @@ fun VideoPlayerModal(
                                     imageVector = if (state.isAudioOnlyMode) Icons.Default.Headphones else Icons.Default.Videocam,
                                     contentDescription = "Modo Audio",
                                     tint = if (state.isAudioOnlyMode) Color.Black else Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
 
                             // Picture in picture button
                             IconButton(
                                 onClick = onEnterPiP,
                                 modifier = Modifier
-                                    .size(34.dp)
+                                    .size(32.dp)
                                     .clip(CircleShape)
                                     .background(Color.White.copy(alpha = 0.2f))
                             ) {
@@ -419,7 +524,7 @@ fun VideoPlayerModal(
                                     imageVector = Icons.Default.PictureInPicture,
                                     contentDescription = "Pantalla Flotante PiP",
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
@@ -491,13 +596,15 @@ fun VideoPlayerModal(
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = state.currentPositionFormatted,
                                     color = Color.White,
                                     fontSize = 11.sp
                                 )
+
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = state.totalDurationFormatted,
@@ -505,14 +612,17 @@ fun VideoPlayerModal(
                                         fontSize = 11.sp
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
+
+                                    // Clickable Quality Badge
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(4.dp))
                                             .background(SnaptubeYellow)
-                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            .clickable { showQualitySheet = true }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            text = "1080p FHD",
+                                            text = state.selectedQuality,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Black,
                                             color = Color.Black
@@ -533,11 +643,43 @@ fun VideoPlayerModal(
                     }
                 }
 
+                // Chapters Bar
+                if (state.chapters.isNotEmpty()) {
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF131318))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.chapters) { chapter ->
+                            val isSelected = state.activeChapterTitle == chapter.title
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) SnaptubeYellow else Color(0xFF22222A))
+                                    .clickable {
+                                        val frac = (chapter.startTimeSeconds.toFloat() / state.totalDurationSeconds.toFloat()).coerceIn(0f, 1f)
+                                        onSeek(frac)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = chapter.title,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.Black else Color.LightGray
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Premium Banner & Title
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     // YouTube Premium Feature Tag
                     Row(
@@ -556,36 +698,36 @@ fun VideoPlayerModal(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "PREMIUM • Sin Publicidad • Reproducción en Fondo Activada",
+                            text = "PREMIUM • Sin Anuncios • Audio en Fondo • ExoPlayer Media3",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = SnaptubeYellow
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
                         text = state.title,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${state.subtitle} • Calidad de Estudio",
                         fontSize = 12.sp,
                         color = Color.LightGray
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Premium Tools Row: Download, Sleep Timer, Autoplay Toggle
+                    // Premium Tools Row: Download, Save for later, Sleep Timer, Autoplay
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Button(
@@ -594,33 +736,59 @@ fun VideoPlayerModal(
                                     ?: MediaCatalog.sampleVideos.first()
                                 onDownloadClick(item)
                             },
-                            modifier = Modifier.weight(1.3f),
+                            modifier = Modifier.weight(1.2f),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = SnaptubeYellow,
                                 contentColor = Color.Black
                             )
                         ) {
-                            Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Descargar", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Descargar", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+
+                        // Watch Later Button
+                        if (onToggleWatchLater != null) {
+                            Button(
+                                onClick = {
+                                    val item = MediaCatalog.sampleVideos.find { it.id == state.id }
+                                        ?: MediaCatalog.sampleVideos.first()
+                                    onToggleWatchLater(item)
+                                    isSavedToWatchLater = !isSavedToWatchLater
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isSavedToWatchLater) SnaptubeYellow.copy(alpha = 0.2f) else Color(0xFF1E1E24),
+                                    contentColor = if (isSavedToWatchLater) SnaptubeYellow else Color.White
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = if (isSavedToWatchLater) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(if (isSavedToWatchLater) "Guardado" else "Guardar", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
 
                         // Sleep Timer Button
                         Button(
                             onClick = { showSleepTimerSheet = true },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(0.9f),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (state.sleepTimerMinutesRemaining != null) SnaptubeYellow.copy(alpha = 0.2f) else Color(0xFF1E1E24),
                                 contentColor = if (state.sleepTimerMinutesRemaining != null) SnaptubeYellow else Color.White
                             )
                         ) {
-                            Icon(imageVector = Icons.Default.LockClock, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(imageVector = Icons.Default.LockClock, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = if (state.sleepTimerMinutesRemaining != null) "${state.sleepTimerMinutesRemaining}m" else "Dormir",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -628,27 +796,27 @@ fun VideoPlayerModal(
                         // Autoplay switch pill
                         Card(
                             modifier = Modifier
-                                .weight(1.2f)
+                                .weight(1.1f)
                                 .clickable { onToggleAutoplay() },
                             shape = RoundedCornerShape(10.dp),
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {
                                 Text(
-                                    text = "Autoplay",
-                                    fontSize = 11.sp,
+                                    text = "Auto",
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (state.isAutoplayEnabled) SnaptubeYellow else Color.Gray
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(2.dp))
                                 Switch(
                                     checked = state.isAutoplayEnabled,
                                     onCheckedChange = { onToggleAutoplay() },
-                                    modifier = Modifier.size(32.dp, 20.dp),
+                                    modifier = Modifier.size(28.dp, 18.dp),
                                     colors = SwitchDefaults.colors(
                                         checkedThumbColor = SnaptubeYellow,
                                         checkedTrackColor = Color(0xFF3B2F04)
@@ -658,7 +826,7 @@ fun VideoPlayerModal(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Speed selectors
                     Row(
@@ -677,7 +845,7 @@ fun VideoPlayerModal(
                                         selectedSpeed = speed
                                         onSetSpeed(speed)
                                     }
-                                    .padding(vertical = 6.dp),
+                                    .padding(vertical = 5.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -697,7 +865,7 @@ fun VideoPlayerModal(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -711,7 +879,7 @@ fun VideoPlayerModal(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "A continuación (Cola Premium)",
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
@@ -774,6 +942,64 @@ fun VideoPlayerModal(
                 }
             }
 
+            // Quality Picker Sheet
+            if (showQualitySheet) {
+                Dialog(onDismissRequest = { showQualitySheet = false }) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1B1B22))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.HighQuality, contentDescription = null, tint = SnaptubeYellow)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Calidad de Reproducción",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            val qualityOptions = listOf(
+                                "1080p Premium (Tasa de bits mejorada)",
+                                "720p 60fps HD",
+                                "480p SD",
+                                "360p Ahorro de datos",
+                                "Solo Audio (YouTube Music)"
+                            )
+
+                            qualityOptions.forEach { q ->
+                                val isSelected = state.selectedQuality.startsWith(q.take(5))
+                                Button(
+                                    onClick = {
+                                        onSelectQuality(q)
+                                        showQualitySheet = false
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isSelected) SnaptubeYellow else Color(0xFF282832),
+                                        contentColor = if (isSelected) Color.Black else Color.White
+                                    )
+                                ) {
+                                    Text(text = q, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Sleep Timer Picker Dialog
             if (showSleepTimerSheet) {
                 Dialog(onDismissRequest = { showSleepTimerSheet = false }) {
@@ -796,7 +1022,7 @@ fun VideoPlayerModal(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Detiene la reproducción automáticamente para ahorrar batería",
+                                text = "Atenúa el volumen suavemente y detiene la reproducción",
                                 fontSize = 12.sp,
                                 color = Color.Gray
                             )

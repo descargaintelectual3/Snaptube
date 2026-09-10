@@ -9,8 +9,10 @@ import com.example.data.model.DownloadQualityOption
 import com.example.data.model.DownloadStatus
 import com.example.data.model.DownloadTaskEntity
 import com.example.data.model.MediaType
+import com.example.data.model.SavedPlaylistItemEntity
 import com.example.data.model.SearchHistoryEntity
 import com.example.data.model.VideoItem
+import com.example.data.model.WatchHistoryEntity
 import com.example.data.model.WhatsAppStatusItem
 import com.example.data.repository.MediaCatalog
 import com.example.data.repository.SnaptubeRepository
@@ -38,13 +40,36 @@ enum class MyFilesTab {
     ALL,
     MUSIC,
     VIDEOS,
+    HISTORY,
     VAULT
 }
 
 class SnaptubeViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SnaptubeRepository(application)
     val downloadEngine = DownloadEngine(application, repository, viewModelScope)
-    val playbackManager = MediaPlaybackManager(viewModelScope)
+    val playbackManager = MediaPlaybackManager(viewModelScope, application, repository)
+
+    // Watch History and Continue Watching
+    val continueWatching: StateFlow<List<WatchHistoryEntity>> = repository.continueWatching
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val fullWatchHistory: StateFlow<List<WatchHistoryEntity>> = repository.watchHistory
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val watchLaterList: StateFlow<List<SavedPlaylistItemEntity>> = repository.getPlaylist("Watch Later")
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun clearWatchHistory() {
+        viewModelScope.launch {
+            repository.clearWatchHistory()
+        }
+    }
+
+    fun removeFromWatchHistory(mediaId: String) {
+        viewModelScope.launch {
+            repository.deleteWatchHistory(mediaId)
+        }
+    }
 
     // Navigation State
     private val _currentTab = MutableStateFlow(SnaptubeNavTab.HOME)
@@ -405,5 +430,30 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleDarkMode() {
         _darkModeEnabled.value = !_darkModeEnabled.value
+    }
+
+    fun toggleWatchLater(video: VideoItem) {
+        viewModelScope.launch {
+            val added = repository.toggleWatchLater(video)
+            _toastMessage.value = if (added) "Añadido a Ver más tarde" else "Eliminado de Ver más tarde"
+        }
+    }
+
+    fun resumeWatching(item: WatchHistoryEntity) {
+        playbackManager.playMedia(
+            id = item.videoId,
+            title = item.title,
+            subtitle = item.channel,
+            thumbnailUrl = item.thumbnailUrl,
+            mediaUrl = item.videoUrl,
+            isVideo = true,
+            openFullScreen = true
+        )
+        playbackManager.seekToSeconds(item.lastPositionSeconds)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        playbackManager.release()
     }
 }

@@ -78,3 +78,39 @@ interface BookmarkDao {
     @Delete
     suspend fun deleteBookmark(bookmark: BookmarkEntity)
 }
+
+@Dao
+interface WatchHistoryDao {
+    @Query("SELECT * FROM watch_history ORDER BY timestamp DESC LIMIT 30")
+    fun getWatchHistory(): Flow<List<com.example.data.model.WatchHistoryEntity>>
+
+    @Query("SELECT * FROM watch_history WHERE isCompleted = 0 AND lastPositionSeconds > 5 ORDER BY timestamp DESC LIMIT 10")
+    fun getContinueWatching(): Flow<List<com.example.data.model.WatchHistoryEntity>>
+
+    @Query("SELECT * FROM watch_history WHERE videoId = :videoId LIMIT 1")
+    suspend fun getWatchHistoryItem(videoId: String): com.example.data.model.WatchHistoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertWatchHistory(item: com.example.data.model.WatchHistoryEntity)
+
+    @Query("DELETE FROM watch_history WHERE videoId = :videoId")
+    suspend fun deleteWatchHistory(videoId: String)
+
+    @Query("DELETE FROM watch_history")
+    suspend fun clearWatchHistory()
+}
+
+@Dao
+interface PlaylistDao {
+    @Query("SELECT * FROM saved_playlist_items WHERE playlistName = :name ORDER BY addedTimestamp DESC")
+    fun getPlaylistItems(name: String): Flow<List<com.example.data.model.SavedPlaylistItemEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlaylistItem(item: com.example.data.model.SavedPlaylistItemEntity)
+
+    @Query("DELETE FROM saved_playlist_items WHERE videoId = :videoId AND playlistName = :name")
+    suspend fun removePlaylistItem(videoId: String, name: String)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM saved_playlist_items WHERE videoId = :videoId AND playlistName = :name)")
+    suspend fun isItemInPlaylist(videoId: String, name: String): Boolean
+}

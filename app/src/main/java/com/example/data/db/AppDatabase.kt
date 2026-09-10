@@ -6,21 +6,27 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.data.model.BookmarkEntity
 import com.example.data.model.DownloadTaskEntity
+import com.example.data.model.SavedPlaylistItemEntity
 import com.example.data.model.SearchHistoryEntity
+import com.example.data.model.WatchHistoryEntity
 
 @Database(
     entities = [
         DownloadTaskEntity::class,
         SearchHistoryEntity::class,
-        BookmarkEntity::class
+        BookmarkEntity::class,
+        WatchHistoryEntity::class,
+        SavedPlaylistItemEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun searchHistoryDao(): SearchHistoryDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun watchHistoryDao(): WatchHistoryDao
+    abstract fun playlistDao(): PlaylistDao
 
     companion object {
         @Volatile

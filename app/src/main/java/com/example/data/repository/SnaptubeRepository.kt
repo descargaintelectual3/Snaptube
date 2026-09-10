@@ -16,12 +16,16 @@ class SnaptubeRepository(private val context: Context) {
     private val downloadDao = db.downloadDao()
     private val searchHistoryDao = db.searchHistoryDao()
     private val bookmarkDao = db.bookmarkDao()
+    private val watchHistoryDao = db.watchHistoryDao()
+    private val playlistDao = db.playlistDao()
 
     val allDownloads: Flow<List<DownloadTaskEntity>> = downloadDao.getAllDownloads()
     val completedLibrary: Flow<List<DownloadTaskEntity>> = downloadDao.getCompletedLibrary()
     val vaultItems: Flow<List<DownloadTaskEntity>> = downloadDao.getVaultItems()
     val searchHistory: Flow<List<SearchHistoryEntity>> = searchHistoryDao.getRecentSearches()
     val bookmarks: Flow<List<BookmarkEntity>> = bookmarkDao.getAllBookmarks()
+    val continueWatching: Flow<List<com.example.data.model.WatchHistoryEntity>> = watchHistoryDao.getContinueWatching()
+    val watchHistory: Flow<List<com.example.data.model.WatchHistoryEntity>> = watchHistoryDao.getWatchHistory()
 
     fun getCompletedByMediaType(mediaType: MediaType): Flow<List<DownloadTaskEntity>> {
         return downloadDao.getCompletedByMediaType(mediaType)
@@ -74,6 +78,68 @@ class SnaptubeRepository(private val context: Context) {
 
     suspend fun removeBookmark(bookmark: BookmarkEntity) {
         bookmarkDao.deleteBookmark(bookmark)
+    }
+
+    suspend fun recordWatchProgress(
+        videoId: String,
+        title: String,
+        channel: String,
+        thumbnailUrl: String,
+        videoUrl: String,
+        positionSeconds: Int,
+        durationSeconds: Int
+    ) {
+        val completed = durationSeconds > 0 && positionSeconds >= (durationSeconds - 5)
+        val mins = durationSeconds / 60
+        val secs = durationSeconds % 60
+        val durStr = String.format("%02d:%02d", mins, secs)
+        watchHistoryDao.upsertWatchHistory(
+            com.example.data.model.WatchHistoryEntity(
+                videoId = videoId,
+                title = title,
+                channel = channel,
+                thumbnailUrl = thumbnailUrl,
+                videoUrl = videoUrl,
+                lastPositionSeconds = positionSeconds,
+                durationSeconds = durationSeconds,
+                durationFormatted = durStr,
+                timestamp = System.currentTimeMillis(),
+                isCompleted = completed
+            )
+        )
+    }
+
+    suspend fun clearWatchHistory() {
+        watchHistoryDao.clearWatchHistory()
+    }
+
+    suspend fun deleteWatchHistory(videoId: String) {
+        watchHistoryDao.deleteWatchHistory(videoId)
+    }
+
+    fun getPlaylist(name: String): Flow<List<com.example.data.model.SavedPlaylistItemEntity>> {
+        return playlistDao.getPlaylistItems(name)
+    }
+
+    suspend fun toggleWatchLater(video: VideoItem): Boolean {
+        val exists = playlistDao.isItemInPlaylist(video.id, "Watch Later")
+        if (exists) {
+            playlistDao.removePlaylistItem(video.id, "Watch Later")
+            return false
+        } else {
+            playlistDao.insertPlaylistItem(
+                com.example.data.model.SavedPlaylistItemEntity(
+                    videoId = video.id,
+                    playlistName = "Watch Later",
+                    title = video.title,
+                    channel = video.channel,
+                    thumbnailUrl = video.thumbnailUrl,
+                    videoUrl = video.videoUrl,
+                    duration = video.duration
+                )
+            )
+            return true
+        }
     }
 
     fun searchVideos(query: String, categoryFilter: String = "Todo"): List<VideoItem> {

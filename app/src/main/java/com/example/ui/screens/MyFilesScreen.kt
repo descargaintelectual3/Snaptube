@@ -64,18 +64,24 @@ import coil.compose.AsyncImage
 import com.example.data.model.DownloadStatus
 import com.example.data.model.DownloadTaskEntity
 import com.example.data.model.MediaType
+import com.example.data.model.WatchHistoryEntity
 import com.example.ui.theme.MusicPurple
 import com.example.ui.theme.SnaptubeRed
 import com.example.ui.theme.SnaptubeYellow
 import com.example.ui.theme.VideoBlue
 import com.example.ui.viewmodel.MyFilesTab
+import androidx.compose.material.icons.filled.History
 
 @Composable
 fun MyFilesScreen(
     currentTab: MyFilesTab,
     onTabSelected: (MyFilesTab) -> Unit,
     allDownloads: List<DownloadTaskEntity>,
+    watchHistory: List<WatchHistoryEntity> = emptyList(),
     onPlayItem: (DownloadTaskEntity) -> Unit,
+    onPlayHistoryItem: ((WatchHistoryEntity) -> Unit)? = null,
+    onClearHistory: (() -> Unit)? = null,
+    onDeleteHistoryItem: ((String) -> Unit)? = null,
     onPauseTask: (DownloadTaskEntity) -> Unit,
     onResumeTask: (DownloadTaskEntity) -> Unit,
     onCancelTask: (DownloadTaskEntity) -> Unit,
@@ -181,6 +187,18 @@ fun MyFilesScreen(
                 )
 
                 Tab(
+                    selected = currentTab == MyFilesTab.HISTORY,
+                    onClick = { onTabSelected(MyFilesTab.HISTORY) },
+                    text = {
+                        Text(
+                            text = "Historial (${watchHistory.size})",
+                            fontWeight = if (currentTab == MyFilesTab.HISTORY) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 13.sp
+                        )
+                    }
+                )
+
+                Tab(
                     selected = currentTab == MyFilesTab.VAULT,
                     onClick = { onOpenVault() },
                     text = {
@@ -256,6 +274,52 @@ fun MyFilesScreen(
                     onToggleVault = onToggleVault,
                     onGoToHome = onGoToHome
                 )
+            }
+            MyFilesTab.HISTORY -> {
+                if (watchHistory.isEmpty()) {
+                    EmptyState(
+                        title = "Historial vacío",
+                        subtitle = "Los videos y música que reproduzcas se guardan automáticamente para continuar donde lo dejaste",
+                        actionText = "Explorar contenido",
+                        onAction = onGoToHome
+                    )
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${watchHistory.size} elementos en historial",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Borrar todo",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SnaptubeRed,
+                                modifier = Modifier.clickable { onClearHistory?.invoke() }
+                            )
+                        }
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(watchHistory, key = { it.videoId }) { item ->
+                                HistoryItemCard(
+                                    history = item,
+                                    onClick = { onPlayHistoryItem?.invoke(item) },
+                                    onDelete = { onDeleteHistoryItem?.invoke(item.videoId) }
+                                )
+                            }
+                        }
+                    }
+                }
             }
             MyFilesTab.VAULT -> {
                 // Vault opened via callback
@@ -616,3 +680,87 @@ private fun EmptyState(
         }
     }
 }
+
+@Composable
+private fun HistoryItemCard(
+    history: WatchHistoryEntity,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(90.dp, 56.dp)
+                    .clip(RoundedCornerShape(6.dp))
+            ) {
+                AsyncImage(
+                    model = history.thumbnailUrl,
+                    contentDescription = history.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                val progress = if (history.durationSeconds > 0) {
+                    (history.lastPositionSeconds.toFloat() / history.durationSeconds.toFloat()).coerceIn(0f, 1f)
+                } else 0f
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .height(3.dp)
+                            .background(SnaptubeRed)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = history.title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                val posText = "${history.lastPositionSeconds / 60}:${String.format("%02d", history.lastPositionSeconds % 60)}"
+                val durText = "${history.durationSeconds / 60}:${String.format("%02d", history.durationSeconds % 60)}"
+                Text(
+                    text = "${history.channel} • $posText / $durText",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Eliminar de historial",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+

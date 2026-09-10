@@ -78,6 +78,38 @@ data class BookmarkEntity(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "watch_history")
+data class WatchHistoryEntity(
+    @PrimaryKey val videoId: String,
+    val title: String,
+    val channel: String,
+    val thumbnailUrl: String,
+    val videoUrl: String,
+    val lastPositionSeconds: Int,
+    val durationSeconds: Int,
+    val durationFormatted: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val isCompleted: Boolean = false
+)
+
+@Entity(tableName = "saved_playlist_items")
+data class SavedPlaylistItemEntity(
+    @PrimaryKey val videoId: String,
+    val playlistName: String, // "Watch Later" or "Favorites"
+    val title: String,
+    val channel: String,
+    val thumbnailUrl: String,
+    val videoUrl: String,
+    val duration: String,
+    val addedTimestamp: Long = System.currentTimeMillis()
+)
+
+data class VideoChapter(
+    val title: String,
+    val startTimeSeconds: Int,
+    val formattedTime: String
+)
+
 data class WhatsAppStatusItem(
     val id: String,
     val mediaType: MediaType,

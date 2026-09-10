@@ -48,9 +48,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.model.VideoItem
+import com.example.data.model.WatchHistoryEntity
 import com.example.data.repository.MediaCatalog
 import com.example.ui.theme.SnaptubeRed
 import com.example.ui.theme.SnaptubeYellow
+import androidx.compose.material.icons.filled.History
 
 @Composable
 fun HomeScreen(
@@ -61,6 +63,8 @@ fun HomeScreen(
     onDownloadClick: (VideoItem) -> Unit,
     onQuickSiteClick: (MediaCatalog.QuickSite) -> Unit,
     onSearchKeywordClick: (String) -> Unit,
+    continueWatching: List<WatchHistoryEntity> = emptyList(),
+    onResumeWatching: ((WatchHistoryEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -83,6 +87,93 @@ fun HomeScreen(
                 keywords = MediaCatalog.trendingKeywords,
                 onKeywordClick = onSearchKeywordClick
             )
+        }
+
+        // YouTube Premium "Seguir viendo" (Continue Watching)
+        if (continueWatching.isNotEmpty()) {
+            item {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            tint = SnaptubeYellow,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Seguir viendo (Continuar)",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(continueWatching, key = { it.videoId }) { history ->
+                            Card(
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .clickable { onResumeWatching?.invoke(history) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Column {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(90.dp)
+                                    ) {
+                                        AsyncImage(
+                                            model = history.thumbnailUrl,
+                                            contentDescription = history.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        // Progress bar at the bottom of thumbnail
+                                        val progress = if (history.durationSeconds > 0) {
+                                            (history.lastPositionSeconds.toFloat() / history.durationSeconds.toFloat()).coerceIn(0f, 1f)
+                                        } else 0f
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomStart)
+                                                .fillMaxWidth()
+                                                .height(3.dp)
+                                                .background(Color.Black.copy(alpha = 0.5f))
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth(progress)
+                                                    .height(3.dp)
+                                                    .background(SnaptubeRed)
+                                            )
+                                        }
+                                    }
+                                    Column(modifier = Modifier.padding(8.dp)) {
+                                        Text(
+                                            text = history.title,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${history.lastPositionSeconds / 60}:${String.format("%02d", history.lastPositionSeconds % 60)} / ${history.durationSeconds / 60}:${String.format("%02d", history.durationSeconds % 60)}",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Category Filter Chips (Todo, Tendencias, Música, Gaming, etc.)

@@ -1,0 +1,8 @@
+{
+  "name": "Snaptube",
+  "description": "All-in-one HD video \u0026 music downloader, offline media player, browser sniffer and WhatsApp status saver.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

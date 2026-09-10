@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Snaptube</string>
+    <string name="premium_vip_banner">Snaptube VIP Club</string>
+    <string name="premium_active">ACTIVO</string>
+    <string name="audio_only_mode">Modo Solo Audio</string>
+    <string name="pip_mode">Ventana Flotante PiP</string>
+    <string name="sleep_timer">Temporizador de Apagado</string>
+    <string name="autoplay">Autoplay</string>
+    <string name="queue_up_next">A continuación</string>
+    <string name="video_quality_1080p">1080p FHD</string>
+    <string name="save_battery_data">Ahorro de batería y datos móviles</string>
+    <string name="cleaner_title">Limpiador Snaptube &amp; RAM</string>
+    <string name="vault_title">Bóveda Segura</string>
+    <string name="wa_status_title">Estados de WhatsApp</string>
+</resources>

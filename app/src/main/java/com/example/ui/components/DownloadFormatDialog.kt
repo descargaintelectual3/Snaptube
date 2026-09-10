@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,12 @@ fun DownloadFormatDialog(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedOption by remember {
         mutableStateOf(video.qualityOptions.firstOrNull { it.isRecommended } ?: video.qualityOptions.firstOrNull())
+    }
+
+    LaunchedEffect(video.qualityOptions) {
+        if (selectedOption == null || !video.qualityOptions.any { it.id == selectedOption?.id }) {
+            selectedOption = video.qualityOptions.firstOrNull { it.isRecommended } ?: video.qualityOptions.firstOrNull()
+        }
     }
 
     val audioOptions = video.qualityOptions.filter { it.mediaType == MediaType.AUDIO }
@@ -319,6 +326,22 @@ private fun QualityGrid(
                                             fontSize = 8.sp,
                                             fontWeight = FontWeight.Black,
                                             color = Color.Black
+                                        )
+                                    }
+                                }
+                                if (option.directStreamUrl.isNotBlank()) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFF2E7D32))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(
+                                            text = "DIRECTO",
+                                            fontSize = 7.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White
                                         )
                                     }
                                 }

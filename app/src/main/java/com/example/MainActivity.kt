@@ -250,16 +250,24 @@ fun SnaptubeApp(
                         allDownloads = allDownloads,
                         watchHistory = watchHistory,
                         onPlayItem = { task ->
+                            val localFile = java.io.File(task.localFilePath)
+                            val playUrl = if (task.localFilePath.isNotBlank() && localFile.exists()) {
+                                task.localFilePath
+                            } else {
+                                task.sourceUrl
+                            }
                             viewModel.playbackManager.playMedia(
                                 id = task.id,
                                 title = task.title,
                                 subtitle = task.channel,
                                 thumbnailUrl = task.thumbnailUrl,
-                                mediaUrl = task.sourceUrl,
+                                mediaUrl = playUrl,
                                 isVideo = task.mediaType == MediaType.VIDEO,
                                 openFullScreen = true
                             )
                         },
+                        onShareItem = { task -> viewModel.shareDownload(context, task) },
+                        onOpenWithItem = { task -> viewModel.openWithDownload(context, task) },
                         onPlayHistoryItem = { history ->
                             viewModel.playbackManager.playMedia(
                                 id = history.videoId,

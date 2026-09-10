@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -86,6 +87,8 @@ fun MyFilesScreen(
     onResumeTask: (DownloadTaskEntity) -> Unit,
     onCancelTask: (DownloadTaskEntity) -> Unit,
     onDeleteTask: (DownloadTaskEntity) -> Unit,
+    onShareItem: ((DownloadTaskEntity) -> Unit)? = null,
+    onOpenWithItem: ((DownloadTaskEntity) -> Unit)? = null,
     onToggleVault: (DownloadTaskEntity) -> Unit,
     onOpenVault: () -> Unit,
     onGoToHome: () -> Unit,
@@ -253,6 +256,8 @@ fun MyFilesScreen(
                     items = completedAll,
                     onPlay = onPlayItem,
                     onDelete = onDeleteTask,
+                    onShare = onShareItem,
+                    onOpenWith = onOpenWithItem,
                     onToggleVault = onToggleVault,
                     onGoToHome = onGoToHome
                 )
@@ -262,6 +267,8 @@ fun MyFilesScreen(
                     items = completedMusic,
                     onPlay = onPlayItem,
                     onDelete = onDeleteTask,
+                    onShare = onShareItem,
+                    onOpenWith = onOpenWithItem,
                     onToggleVault = onToggleVault,
                     onGoToHome = onGoToHome
                 )
@@ -271,6 +278,8 @@ fun MyFilesScreen(
                     items = completedVideos,
                     onPlay = onPlayItem,
                     onDelete = onDeleteTask,
+                    onShare = onShareItem,
+                    onOpenWith = onOpenWithItem,
                     onToggleVault = onToggleVault,
                     onGoToHome = onGoToHome
                 )
@@ -452,6 +461,8 @@ private fun CompletedList(
     items: List<DownloadTaskEntity>,
     onPlay: (DownloadTaskEntity) -> Unit,
     onDelete: (DownloadTaskEntity) -> Unit,
+    onShare: ((DownloadTaskEntity) -> Unit)? = null,
+    onOpenWith: ((DownloadTaskEntity) -> Unit)? = null,
     onToggleVault: (DownloadTaskEntity) -> Unit,
     onGoToHome: () -> Unit
 ) {
@@ -473,6 +484,8 @@ private fun CompletedList(
                     item = item,
                     onPlay = { onPlay(item) },
                     onDelete = { onDelete(item) },
+                    onShare = { onShare?.invoke(item) },
+                    onOpenWith = { onOpenWith?.invoke(item) },
                     onToggleVault = { onToggleVault(item) }
                 )
             }
@@ -485,6 +498,8 @@ private fun CompletedItemCard(
     item: DownloadTaskEntity,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
+    onShare: (() -> Unit)? = null,
+    onOpenWith: (() -> Unit)? = null,
     onToggleVault: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -598,6 +613,22 @@ private fun CompletedItemCard(
                             onPlay()
                         },
                         leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Compartir archivo") },
+                        onClick = {
+                            menuExpanded = false
+                            onShare?.invoke()
+                        },
+                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Abrir con...") },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenWith?.invoke()
+                        },
+                        leadingIcon = { Icon(Icons.Default.OpenInNew, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Mover a Bóveda Segura") },

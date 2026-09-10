@@ -2,6 +2,7 @@ package com.example.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.BookmarkEntity
@@ -18,6 +19,7 @@ import com.example.data.repository.MediaCatalog
 import com.example.data.repository.SnaptubeRepository
 import com.example.engine.DownloadEngine
 import com.example.engine.MediaPlaybackManager
+import com.example.engine.StreamExtractor
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -208,6 +210,19 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
 
     fun openDownloadSheet(video: VideoItem) {
         _activeDownloadVideo.value = video
+        viewModelScope.launch {
+            try {
+                val resolved = StreamExtractor.resolveMedia(video.videoUrl)
+                if (_activeDownloadVideo.value?.id == video.id && resolved.qualityOptions.isNotEmpty()) {
+                    _activeDownloadVideo.value = video.copy(
+                        qualityOptions = resolved.qualityOptions,
+                        thumbnailUrl = if (video.thumbnailUrl.isBlank()) resolved.thumbnailUrl else video.thumbnailUrl
+                    )
+                }
+            } catch (e: Exception) {
+                // Keep fallback options
+            }
+        }
     }
 
     fun closeDownloadSheet() {
@@ -415,13 +430,70 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun startDirectDownload(url: String, isAudio: Boolean) {
-        downloadEngine.startDirectUrlDownload(
-            url = url,
-            title = "Descarga Directa ${System.currentTimeMillis() % 1000}",
-            qualityLabel = if (isAudio) "320k" else "1080p HD",
-            isAudio = isAudio
-        )
+        viewModelScope.launch {
+            _toastMessage.value = "Extrayendo formatos oficiales del enlace..."
+            try {
+                val resolved = StreamExtractor.resolveMedia(url)
+                val targetQuality = if (isAudio) {
+                    resolved.qualityOptions.firstOrNull { it.mediaType == MediaType.AUDIO && it.isRecommended }
+                        ?: resolved.qualityOptions.firstOrNull { it.mediaType == MediaType.AUDIO }
+                        ?: DownloadQualityOption(
+                            id = "direct_mp3",
+                            format = "MP3",
+                            qualityLabel = "320k HQ",
+                            mediaType = MediaType.AUDIO,
+                            approximateSizeBytes = 9 * 1024 * 1024L,
+                            approximateSizeFormatted = "9.0 MB",
+                            directStreamUrl = url,
+                            mimeType = "audio/mpeg"
+                        )
+                } else {
+                    resolved.qualityOptions.firstOrNull { it.mediaType == MediaType.VIDEO && it.isRecommended }
+                        ?: resolved.qualityOptions.firstOrNull { it.mediaType == MediaType.VIDEO }
+                        ?: DownloadQualityOption(
+                            id = "direct_mp4",
+                            format = "MP4",
+                            qualityLabel = "720p HD",
+                            mediaType = MediaType.VIDEO,
+                            approximateSizeBytes = 25 * 1024 * 1024L,
+                            approximateSizeFormatted = "25.0 MB",
+                            directStreamUrl = url,
+                            mimeType = "video/mp4"
+                        )
+                }
+                downloadEngine.startDownload(resolved, targetQuality)
+            } catch (e: Exception) {
+                downloadEngine.startDirectUrlDownload(
+                    url = url,
+                    title = "Descarga Web ${System.currentTimeMillis() % 1000}",
+                    qualityLabel = if (isAudio) "320k" else "1080p HD",
+                    isAudio = isAudio
+                )
+            }
+        }
         closeDirectUrlDialog()
+    }
+
+    fun shareDownload(context: Context, task: DownloadTaskEntity) {
+        val intent = downloadEngine.getShareIntent(task)
+        if (intent != null) {
+            context.startActivity(Intent.createChooser(intent, "Compartir ${task.title}"))
+        } else {
+            _toastMessage.value = "El archivo aún se está descargando o no está disponible"
+        }
+    }
+
+    fun openWithDownload(context: Context, task: DownloadTaskEntity) {
+        val intent = downloadEngine.getOpenWithIntent(task)
+        if (intent != null) {
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                _toastMessage.value = "No se encontró una aplicación externa para reproducir este archivo"
+            }
+        } else {
+            _toastMessage.value = "El archivo aún no se ha completado"
+        }
     }
 
     fun dismissToast() {

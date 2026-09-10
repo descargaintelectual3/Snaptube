@@ -27,7 +27,9 @@ data class DownloadQualityOption(
     val mediaType: MediaType,
     val approximateSizeBytes: Long,
     val approximateSizeFormatted: String,
-    val isRecommended: Boolean = false
+    val isRecommended: Boolean = false,
+    val directStreamUrl: String = "",
+    val mimeType: String = ""
 )
 
 data class VideoItem(

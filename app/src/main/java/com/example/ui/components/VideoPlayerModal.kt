@@ -296,9 +296,14 @@ fun VideoPlayerModal(
                         state.mediaUrl.endsWith(".mp4") || state.mediaUrl.endsWith(".mp3") || state.mediaUrl.endsWith(".m4a") ||
                         state.mediaUrl.endsWith(".webm") || state.mediaUrl.endsWith(".m3u8") || state.mediaUrl.contains("googlevideo.com")
                     )
-                    val ytVideoId = remember(state.mediaUrl, state.id) {
-                        com.example.engine.StreamExtractor.extractVideoId(state.mediaUrl)
-                            ?: com.example.engine.StreamExtractor.extractVideoId(state.id)
+                    // If playing downloaded/offline media, NEVER extract or treat as online YouTube
+                    val ytVideoId = remember(state.mediaUrl, state.id, state.isOfflineMedia, state.localFilePath) {
+                        if (state.isOfflineMedia || state.localFilePath.isNotEmpty()) {
+                            null
+                        } else {
+                            com.example.engine.StreamExtractor.extractVideoId(state.mediaUrl)
+                                ?: com.example.engine.StreamExtractor.extractVideoId(state.id)
+                        }
                     }
                     val isOnlineYouTube = ytVideoId != null && !hasLocalFile && !isDirectStream
 
@@ -346,6 +351,38 @@ fun VideoPlayerModal(
                                     }
                                 )
                             }
+                        } else if (state.isOfflineMedia || state.localFilePath.isNotEmpty()) {
+                            // Clean local file unavailable screen - NEVER redirect to YouTube
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                    modifier = Modifier.padding(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Videocam,
+                                        contentDescription = null,
+                                        tint = Color.Gray,
+                                        modifier = Modifier.size(52.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "Archivo descargado no disponible",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "El archivo local no se encuentra o la descarga no se completó.",
+                                        color = Color.LightGray,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
                         } else if (ytVideoId != null) {
                             val embedHtml = """
                                 <!DOCTYPE html>
@@ -360,16 +397,25 @@ fun VideoPlayerModal(
                                     <script>
                                         try {
                                             Object.defineProperty(navigator, 'webdriver', { get: () => false });
-                                            window.chrome = { runtime: {}, app: {} };
+                                            Object.defineProperty(navigator, 'languages', { get: () => ['es-ES', 'es', 'en-US', 'en'] });
+                                            window.chrome = { runtime: {}, app: {}, cs: {} };
                                         } catch(e) {}
+
+                                        function fallbackToInvidious() {
+                                            var iframe = document.getElementById('yt-embed');
+                                            if (iframe && !iframe.src.includes('inv.tux.pizza')) {
+                                                iframe.src = 'https://inv.tux.pizza/embed/$ytVideoId?autoplay=1';
+                                            }
+                                        }
                                     </script>
                                 </head>
                                 <body>
                                     <iframe 
                                         id="yt-embed"
-                                        src="https://www.youtube-nocookie.com/embed/$ytVideoId?autoplay=1&playsinline=1&controls=1&rel=0&modestbranding=1&enablejsapi=1&iv_load_policy=3" 
+                                        src="https://www.youtube.com/embed/$ytVideoId?autoplay=1&playsinline=1&controls=1&rel=0&modestbranding=1&enablejsapi=1" 
                                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                        allowfullscreen>
+                                        allowfullscreen
+                                        onerror="fallbackToInvidious()">
                                     </iframe>
                                 </body>
                                 </html>
@@ -381,6 +427,12 @@ fun VideoPlayerModal(
                                 factory = { ctx ->
                                     android.webkit.WebView(ctx).apply {
                                         webViewInstance = this
+                                        try {
+                                            val cookieMgr = android.webkit.CookieManager.getInstance()
+                                            cookieMgr.setAcceptCookie(true)
+                                            cookieMgr.setAcceptThirdPartyCookies(this, true)
+                                        } catch (_: Exception) {}
+
                                         settings.javaScriptEnabled = true
                                         settings.domStorageEnabled = true
                                         settings.databaseEnabled = true
@@ -389,7 +441,7 @@ fun VideoPlayerModal(
                                         settings.useWideViewPort = true
                                         settings.allowFileAccess = true
                                         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
                                         
                                         webChromeClient = object : android.webkit.WebChromeClient() {
                                             override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
@@ -426,7 +478,15 @@ fun VideoPlayerModal(
                                                     (function() {
                                                         try {
                                                             Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                                                            Object.defineProperty(navigator, 'languages', { get: () => ['es-ES', 'es', 'en-US', 'en'] });
                                                             window.chrome = { runtime: {}, app: {} };
+                                                            var bodyText = (document.body && document.body.innerText) || '';
+                                                            if (bodyText.indexOf("Sign in") !== -1 || bodyText.indexOf("robot") !== -1) {
+                                                                var ifr = document.getElementById('yt-embed');
+                                                                if (ifr && !ifr.src.includes('inv.tux.pizza')) {
+                                                                    ifr.src = 'https://inv.tux.pizza/embed/$ytVideoId?autoplay=1';
+                                                                }
+                                                            }
                                                         } catch(e) {}
                                                     })();
                                                 """.trimIndent()

@@ -122,7 +122,6 @@ private const val AD_BLOCKER_JS = """
 
     // 2. High-speed auto-skip video ad loop
     function skipVideoAds() {
-        // Fast-forward video if ad is showing
         var video = document.querySelector('video');
         var player = document.querySelector('.html5-video-player');
         if (video && player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) {
@@ -132,7 +131,6 @@ private const val AD_BLOCKER_JS = """
             }
         }
 
-        // Click skip button immediately
         var skipBtns = document.querySelectorAll(
             '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton'
         );
@@ -143,9 +141,51 @@ private const val AD_BLOCKER_JS = """
         });
     }
 
+    // 3. YouTube Bot Check & Sign-in Error Auto-Unblocker
+    function unlockBotBlockedVideo() {
+        var url = window.location.href;
+        var match = url.match(/[?&]v=([a-zA-Z0-9_-]{11})/) || url.match(/\/shorts\/([a-zA-Z0-9_-]{11})/) || url.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+        if (!match) return;
+        var videoId = match[1];
+
+        var bodyText = document.body ? document.body.innerText : '';
+        var isBlocked = bodyText.indexOf("not a bot") !== -1 || 
+                        bodyText.indexOf("no eres un robot") !== -1 ||
+                        bodyText.indexOf("Sign in to confirm") !== -1 ||
+                        document.querySelector('ytm-player-error-message-renderer') !== null ||
+                        document.querySelector('.ytp-error-content') !== null;
+
+        if (isBlocked && !document.getElementById('snaptube-unblocked-embed')) {
+            var playerContainer = document.querySelector('ytm-player-error-message-renderer') ||
+                                  document.querySelector('.player-container') ||
+                                  document.getElementById('player') ||
+                                  document.querySelector('#player-control-overlay') ||
+                                  document.querySelector('.html5-video-player');
+
+            if (playerContainer) {
+                var iframe = document.createElement('iframe');
+                iframe.id = 'snaptube-unblocked-embed';
+                iframe.src = 'https://www.youtube-nocookie.com/embed/' + videoId + '?autoplay=1&playsinline=1&controls=1&rel=0&modestbranding=1';
+                iframe.style.width = '100%';
+                iframe.style.height = '100%';
+                iframe.style.minHeight = '220px';
+                iframe.style.border = '0';
+                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+                iframe.allowFullscreen = true;
+
+                playerContainer.innerHTML = '';
+                playerContainer.appendChild(iframe);
+                playerContainer.style.display = 'block';
+                playerContainer.style.height = '220px';
+                playerContainer.style.background = '#000';
+            }
+        }
+    }
+
     if (!window.__snaptube_ad_skipper_installed) {
         window.__snaptube_ad_skipper_installed = true;
         setInterval(skipVideoAds, 300);
+        setInterval(unlockBotBlockedVideo, 500);
     }
 })();
 """
@@ -388,6 +428,9 @@ fun YouTubeWebViewBrowser(
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
 
+                            android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
                             settings.apply {
                                 javaScriptEnabled = true
                                 domStorageEnabled = true
@@ -397,7 +440,7 @@ fun YouTubeWebViewBrowser(
                                 loadWithOverviewMode = true
                                 mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                 cacheMode = WebSettings.LOAD_DEFAULT
-                                userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.127 Mobile Safari/537.36"
                             }
 
                             webViewClient = object : WebViewClient() {

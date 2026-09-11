@@ -10,6 +10,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import com.example.data.model.MediaType
 import com.example.data.model.VideoChapter
 import com.example.data.model.VideoItem
 import com.example.data.repository.MediaCatalog
@@ -265,10 +266,47 @@ class MediaPlaybackManager(
                     player.playbackParameters = player.playbackParameters.withSpeed(_playbackState.value.playbackSpeed)
                     player.playWhenReady = true
                 } else {
-                    // For web / YouTube pages, stop ExoPlayer; VideoPlayerModal will render the YouTube player
+                    // For web / YouTube pages, stop ExoPlayer initially; VideoPlayerModal will render the YouTube player
                     player.stop()
                     player.clearMediaItems()
                     _playbackState.value = _playbackState.value.copy(isBuffering = false)
+
+                    // Asynchronously resolve genuine direct media stream to upgrade to native ExoPlayer
+                    if (mediaUrl.contains("youtube.com") || mediaUrl.contains("youtu.be")) {
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val resolvedItem = StreamExtractor.resolveMedia(mediaUrl)
+                                val directOpt = resolvedItem.qualityOptions.firstOrNull { it.mediaType == MediaType.VIDEO && it.directStreamUrl.isNotBlank() }
+                                    ?: resolvedItem.qualityOptions.firstOrNull { it.directStreamUrl.isNotBlank() }
+                                val directUrl = directOpt?.directStreamUrl ?: ""
+                                if (directUrl.isNotBlank() && isDirectMediaStream(directUrl)) {
+                                    _playbackState.value = _playbackState.value.copy(
+                                        mediaUrl = directUrl,
+                                        title = if (title.isBlank() || title.startsWith("YouTube Video")) resolvedItem.title else title
+                                    )
+                                    val streamMediaItem = MediaItem.Builder()
+                                        .setUri(Uri.parse(directUrl))
+                                        .setMediaId(id)
+                                        .setMediaMetadata(
+                                            MediaMetadata.Builder()
+                                                .setTitle(title)
+                                                .setArtist(subtitle)
+                                                .setArtworkUri(Uri.parse(thumbnailUrl))
+                                                .build()
+                                        )
+                                        .build()
+                                    launch(Dispatchers.Main) {
+                                        player.setMediaItem(streamMediaItem)
+                                        player.prepare()
+                                        player.playbackParameters = player.playbackParameters.withSpeed(_playbackState.value.playbackSpeed)
+                                        player.playWhenReady = true
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Direct stream auto-upgrade error: ${e.message}")
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Error setting up ExoPlayer: ${e.message}")

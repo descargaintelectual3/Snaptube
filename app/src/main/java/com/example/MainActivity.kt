@@ -240,6 +240,17 @@ fun SnaptubeApp(
                         },
                         onDownloadDetectedMedia = { video ->
                             viewModel.openDownloadSheet(video)
+                        },
+                        onPlayMedia = { video ->
+                            viewModel.playbackManager.playMedia(
+                                id = video.id,
+                                title = video.title,
+                                subtitle = video.channel,
+                                thumbnailUrl = video.thumbnailUrl,
+                                mediaUrl = video.videoUrl,
+                                isVideo = true,
+                                openFullScreen = true
+                            )
                         }
                     )
                 }

@@ -32,6 +32,13 @@ object StreamExtractor {
             .build()
     }
 
+    private val COBALT_INSTANCES = listOf(
+        "https://api.cobalt.tools",
+        "https://co.wuk.sh",
+        "https://cobalt.kwiatekm.tokyo",
+        "https://cobalt-api.kalli.st"
+    )
+
     private val PIPED_INSTANCES = listOf(
         "https://pipedapi.kavin.rocks",
         "https://api.piped.private.coffee",
@@ -158,7 +165,19 @@ object StreamExtractor {
         val videoId = extractVideoId(inputUrl)
 
         if (videoId != null) {
-            // 1. Try Innertube Android Client Player API
+            // 1. Try Cobalt instances for direct high-speed streams
+            for (cobaltBase in COBALT_INSTANCES) {
+                try {
+                    val cobaltResult = fetchCobaltFormats(cobaltBase, videoId)
+                    if (cobaltResult != null && cobaltResult.qualityOptions.any { it.directStreamUrl.isNotBlank() }) {
+                        return@withContext cobaltResult
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Cobalt $cobaltBase failed: ${e.message}")
+                }
+            }
+
+            // 2. Try Innertube Android Client Player API
             try {
                 val innertubeResult = fetchInnertubeFormats(videoId)
                 if (innertubeResult != null) return@withContext innertubeResult
@@ -166,7 +185,7 @@ object StreamExtractor {
                 Log.w(TAG, "Innertube resolution failed: ${e.message}")
             }
 
-            // 2. Try Piped API Instances
+            // 3. Try Piped API Instances
             for (pipedBase in PIPED_INSTANCES) {
                 try {
                     val pipedResult = fetchPipedFormats(pipedBase, videoId)
@@ -176,7 +195,7 @@ object StreamExtractor {
                 }
             }
 
-            // 3. Try Invidious API
+            // 4. Try Invidious API
             for (invidiousBase in INVIDIOUS_INSTANCES) {
                 try {
                     val invidiousResult = fetchInvidiousFormats(invidiousBase, videoId)
@@ -577,6 +596,116 @@ object StreamExtractor {
             thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
             videoUrl = primaryVideoUrl ?: "https://www.youtube.com/watch?v=$videoId",
             category = "YouTube",
+            qualityOptions = qualityOptions
+        )
+    }
+
+    /**
+     * Resolves YouTube formats using open-source Cobalt API instances
+     */
+    private fun fetchCobaltFormats(baseUrl: String, videoId: String): VideoItem? {
+        val ytUrl = "https://www.youtube.com/watch?v=$videoId"
+        val payload = JSONObject().apply {
+            put("url", ytUrl)
+        }
+
+        val request = Request.Builder()
+            .url(if (baseUrl.endsWith("/api/json")) baseUrl else "$baseUrl/api/json")
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
+            .build()
+
+        val response = httpClient.newCall(request).execute()
+        if (!response.isSuccessful || response.body == null) return null
+
+        val json = JSONObject(response.body!!.string())
+        val streamUrl = json.optString("url")
+        if (streamUrl.isBlank()) return null
+
+        var audioUrl = streamUrl
+        try {
+            val audioPayload = JSONObject().apply {
+                put("url", ytUrl)
+                put("isAudioOnly", true)
+                put("aFormat", "mp3")
+            }
+            val audioReq = Request.Builder()
+                .url(if (baseUrl.endsWith("/api/json")) baseUrl else "$baseUrl/api/json")
+                .post(audioPayload.toString().toRequestBody("application/json".toMediaType()))
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
+                .build()
+            val audioResp = httpClient.newCall(audioReq).execute()
+            if (audioResp.isSuccessful && audioResp.body != null) {
+                val audioJson = JSONObject(audioResp.body!!.string())
+                val fetchedAudio = audioJson.optString("url")
+                if (fetchedAudio.isNotBlank()) {
+                    audioUrl = fetchedAudio
+                }
+            }
+        } catch (_: Exception) {}
+
+        val qualityOptions = mutableListOf(
+            DownloadQualityOption(
+                id = "mp3_320k",
+                format = "MP3",
+                qualityLabel = "320k HQ",
+                mediaType = MediaType.AUDIO,
+                approximateSizeBytes = 8 * 1024 * 1024L,
+                approximateSizeFormatted = "8.0 MB",
+                isRecommended = true,
+                directStreamUrl = audioUrl,
+                mimeType = "audio/mpeg"
+            ),
+            DownloadQualityOption(
+                id = "mp3_128k",
+                format = "MP3",
+                qualityLabel = "128k",
+                mediaType = MediaType.AUDIO,
+                approximateSizeBytes = 4 * 1024 * 1024L,
+                approximateSizeFormatted = "4.0 MB",
+                directStreamUrl = audioUrl,
+                mimeType = "audio/mpeg"
+            ),
+            DownloadQualityOption(
+                id = "mp4_720p",
+                format = "MP4",
+                qualityLabel = "720p HD",
+                mediaType = MediaType.VIDEO,
+                approximateSizeBytes = 22 * 1024 * 1024L,
+                approximateSizeFormatted = "22.0 MB",
+                isRecommended = true,
+                directStreamUrl = streamUrl,
+                mimeType = "video/mp4"
+            ),
+            DownloadQualityOption(
+                id = "mp4_480p",
+                format = "MP4",
+                qualityLabel = "480p",
+                mediaType = MediaType.VIDEO,
+                approximateSizeBytes = 12 * 1024 * 1024L,
+                approximateSizeFormatted = "12.0 MB",
+                directStreamUrl = streamUrl,
+                mimeType = "video/mp4"
+            )
+        )
+
+        val rawTitle = json.optString("filename", "Video de YouTube").replace(Regex("\\.[a-zA-Z0-9]+$"), "")
+        val cleanTitle = if (rawTitle.isBlank()) "Video de YouTube" else rawTitle
+
+        return VideoItem(
+            id = videoId,
+            title = cleanTitle,
+            channel = "YouTube",
+            duration = "HD",
+            viewCount = "Directo",
+            publishedTime = "Online",
+            thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            videoUrl = streamUrl,
+            category = "Cobalt Engine",
             qualityOptions = qualityOptions
         )
     }

@@ -262,7 +262,13 @@ class DownloadEngine(
             } else {
                 resolvedItem.qualityOptions.firstOrNull { it.mediaType == MediaType.VIDEO && it.directStreamUrl.isNotBlank() }
             }
-            resolvedUrl = matchedOption?.directStreamUrl ?: resolvedItem.videoUrl
+            resolvedUrl = matchedOption?.directStreamUrl ?: ""
+        }
+
+        // If direct stream URL is empty or points to a webpage, we cannot download pure media
+        if (resolvedUrl.isBlank() || resolvedUrl.contains("youtube.com/watch") || resolvedUrl.contains("youtu.be/")) {
+            Log.w(TAG, "No direct media stream URL available for ${task.title}")
+            return@withContext false
         }
 
         var downloadedFromNetwork = false
@@ -271,7 +277,7 @@ class DownloadEngine(
         try {
             val requestBuilder = Request.Builder()
                 .url(resolvedUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
 
             // Support resumable Range requests if we already have partial bytes
             if (existingBytes > 0) {
@@ -283,6 +289,14 @@ class DownloadEngine(
             httpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful && response.body != null) {
                     val body = response.body!!
+                    val contentType = (response.header("Content-Type") ?: body.contentType()?.toString() ?: "").lowercase()
+
+                    // Ensure this is a real binary media stream, NEVER an HTML error or bot verification page
+                    if (contentType.contains("text/html") || contentType.contains("text/plain") || contentType.contains("application/json")) {
+                        Log.w(TAG, "Refusing to write non-media Content-Type ($contentType) to ${targetFile.name}")
+                        return@withContext false
+                    }
+
                     val isAppend = response.code == 206 // 206 Partial Content
                     val contentLength = body.contentLength()
                     val totalFromNet = if (isAppend) existingBytes + contentLength else if (contentLength > 0) contentLength else task.totalSizeBytes
@@ -334,8 +348,8 @@ class DownloadEngine(
             downloadedFromNetwork = false
         }
 
-        // If network download failed, clean up any incomplete/empty file
-        if (!downloadedFromNetwork || !targetFile.exists() || targetFile.length() == 0L) {
+        // If network download failed or file is suspiciously small, clean up
+        if (!downloadedFromNetwork || !targetFile.exists() || targetFile.length() < 1024L) {
             if (targetFile.exists()) {
                 targetFile.delete()
             }

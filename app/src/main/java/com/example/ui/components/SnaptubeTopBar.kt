@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -82,50 +83,51 @@ fun SnaptubeTopBar(
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
-            // Top branding row
+            // Top branding row - YouTube Premium style
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Snaptube Logo Badge
+                // Official YouTube Red Play Logo
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SnaptubeYellow),
+                        .size(34.dp, 24.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFFF0000)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(20.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(SnaptubeRed),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Snaptube Logo",
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "YouTube",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
-                Column {
+                Text(
+                    text = "YouTube",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.8).sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.width(5.dp))
+
+                // Premium badge
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF212121))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
                     Text(
-                        text = "Snaptube",
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = (-0.5).sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "HD Video & Music Downloader",
+                        text = "Premium",
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = SnaptubeYellow
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
 

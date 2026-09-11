@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.BrightnessMedium
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Verified
@@ -81,7 +83,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import android.content.Intent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -154,7 +158,98 @@ fun VideoPlayerModal(
                     .fillMaxSize()
                     .statusBarsPadding()
             ) {
-                // Video Screen Area with Gesture Detection (Double Tap + Vertical Sliders)
+                // YouTube Premium Header Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .background(Color(0xFF0F0F12))
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Minimizar",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // YouTube Red Play Icon
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp, 20.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Color(0xFFFF0000)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "YouTube",
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Text(
+                        text = "YouTube",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White
+                    )
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF272727))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "Premium",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    IconButton(
+                        onClick = onEnterPiP,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PictureInPicture,
+                            contentDescription = "Pantalla flotante",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cerrar",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Video Screen Area
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -163,17 +258,18 @@ fun VideoPlayerModal(
                         .testTag("video_player_viewport")
                 ) {
                     // Video Content or Audio-Only Visualizer
-                    if (!state.isAudioOnlyMode) {
-                        val hasLocalFile = state.localFilePath.isNotEmpty() && File(state.localFilePath).exists() && File(state.localFilePath).length() > 500
-                        val isDirectStream = state.mediaUrl.isNotEmpty() && (
-                            state.mediaUrl.endsWith(".mp4") || state.mediaUrl.endsWith(".mp3") || state.mediaUrl.endsWith(".m4a") ||
-                            state.mediaUrl.endsWith(".webm") || state.mediaUrl.endsWith(".m3u8") || state.mediaUrl.contains("googlevideo.com")
-                        )
-                        val ytVideoId = remember(state.mediaUrl, state.id) {
-                            com.example.engine.StreamExtractor.extractVideoId(state.mediaUrl)
-                                ?: com.example.engine.StreamExtractor.extractVideoId(state.id)
-                        }
+                    val hasLocalFile = state.localFilePath.isNotEmpty() && File(state.localFilePath).exists() && File(state.localFilePath).length() > 500
+                    val isDirectStream = state.mediaUrl.isNotEmpty() && (
+                        state.mediaUrl.endsWith(".mp4") || state.mediaUrl.endsWith(".mp3") || state.mediaUrl.endsWith(".m4a") ||
+                        state.mediaUrl.endsWith(".webm") || state.mediaUrl.endsWith(".m3u8") || state.mediaUrl.contains("googlevideo.com")
+                    )
+                    val ytVideoId = remember(state.mediaUrl, state.id) {
+                        com.example.engine.StreamExtractor.extractVideoId(state.mediaUrl)
+                            ?: com.example.engine.StreamExtractor.extractVideoId(state.id)
+                    }
+                    val isOnlineYouTube = ytVideoId != null && !hasLocalFile && !isDirectStream
 
+                    if (!state.isAudioOnlyMode) {
                         if (hasLocalFile || isDirectStream) {
                             if (player != null) {
                                 // ExoPlayer hardware-accelerated surface
@@ -218,7 +314,7 @@ fun VideoPlayerModal(
                                 )
                             }
                         } else if (ytVideoId != null) {
-                            // Genuine YouTube player embedding
+                            // Genuine YouTube Mobile Player
                             AndroidView(
                                 modifier = Modifier.fillMaxSize(),
                                 factory = { ctx ->
@@ -228,12 +324,19 @@ fun VideoPlayerModal(
                                         settings.mediaPlaybackRequiresUserGesture = false
                                         settings.loadWithOverviewMode = true
                                         settings.useWideViewPort = true
-                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                                        settings.allowFileAccess = true
+                                        settings.databaseEnabled = true
+                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
                                         webChromeClient = android.webkit.WebChromeClient()
-                                        webViewClient = android.webkit.WebViewClient()
+                                        webViewClient = object : android.webkit.WebViewClient() {
+                                            override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                                                return false
+                                            }
+                                        }
+                                        tag = ytVideoId
                                         val html = """
                                             <!DOCTYPE html>
-                                            <html>
+                                            <html style="margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;">
                                             <head>
                                                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                                                 <style>
@@ -242,9 +345,9 @@ fun VideoPlayerModal(
                                                     iframe { width:100%; height:100%; border:none; }
                                                 </style>
                                             </head>
-                                            <body>
+                                            <body style="margin:0;padding:0;width:100%;height:100%;background:#000;">
                                                 <iframe 
-                                                    src="https://www.youtube-nocookie.com/embed/$ytVideoId?autoplay=1&playsinline=1&fs=1&rel=0&modestbranding=1" 
+                                                    src="https://www.youtube.com/embed/$ytVideoId?autoplay=1&playsinline=1&controls=1&fs=1&enablejsapi=1&rel=0" 
                                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                                                     allowfullscreen>
                                                 </iframe>
@@ -252,6 +355,33 @@ fun VideoPlayerModal(
                                             </html>
                                         """.trimIndent()
                                         loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
+                                    }
+                                },
+                                update = { wv ->
+                                    val currentTag = wv.tag as? String
+                                    if (currentTag != ytVideoId) {
+                                        wv.tag = ytVideoId
+                                        val html = """
+                                            <!DOCTYPE html>
+                                            <html style="margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;">
+                                            <head>
+                                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                                <style>
+                                                    * { margin:0; padding:0; box-sizing:border-box; }
+                                                    body, html { width:100%; height:100%; background:#000; overflow:hidden; }
+                                                    iframe { width:100%; height:100%; border:none; }
+                                                </style>
+                                            </head>
+                                            <body style="margin:0;padding:0;width:100%;height:100%;background:#000;">
+                                                <iframe 
+                                                    src="https://www.youtube.com/embed/$ytVideoId?autoplay=1&playsinline=1&controls=1&fs=1&enablejsapi=1&rel=0" 
+                                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                                    allowfullscreen>
+                                                </iframe>
+                                            </body>
+                                            </html>
+                                        """.trimIndent()
+                                        wv.loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
                                     }
                                 }
                             )
@@ -339,8 +469,10 @@ fun VideoPlayerModal(
                         }
                     }
 
-                    // Gesture Overlays: Left 50% for Double Tap Rewind & Brightness Drag
-                    Box(
+                    // Gesture & Controls Overlays (Only for local files and direct streams; YouTube has its own controls)
+                    if (!isOnlineYouTube) {
+                        // Gesture Overlays: Left 50% for Double Tap Rewind & Brightness Drag
+                        Box(
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth(0.5f)
@@ -692,6 +824,7 @@ fun VideoPlayerModal(
                         }
                     }
                 }
+                }
 
                 // Chapters Bar
                 if (state.chapters.isNotEmpty()) {
@@ -725,186 +858,176 @@ fun VideoPlayerModal(
                     }
                 }
 
-                // Premium Banner & Title
+                // Video Details & YouTube Channel Area
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
-                    // YouTube Premium Feature Tag
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF1E1C12))
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Verified,
-                            contentDescription = null,
-                            tint = SnaptubeYellow,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "PREMIUM • Sin Anuncios • Audio en Fondo • ExoPlayer Media3",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = SnaptubeYellow
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
                     Text(
                         text = state.title,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
-                        text = "${state.subtitle} • Calidad de Estudio",
+                        text = "${state.subtitle} • YouTube Oficial",
                         fontSize = 12.sp,
-                        color = Color.LightGray
+                        color = Color(0xFFAAAAAA)
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Premium Tools Row: Download, Save for later, Sleep Timer, Autoplay
+                    // Channel Row (Official YouTube Style)
+                    var isSubscribed by remember { mutableStateOf(false) }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SnaptubeYellow),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = (state.subtitle.firstOrNull() ?: 'Y').toString(),
+                                fontWeight = FontWeight.Black,
+                                color = Color.Black,
+                                fontSize = 15.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = state.subtitle.ifEmpty { "YouTube Channel" },
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Verified,
+                                    contentDescription = null,
+                                    tint = SnaptubeYellow,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                            Text(
+                                text = "1.2 M suscriptores",
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                        }
+
+                        Button(
+                            onClick = { isSubscribed = !isSubscribed },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSubscribed) Color(0xFF272727) else Color(0xFFCC0000),
+                                contentColor = Color.White
+                            ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (isSubscribed) "SUSCRITO" else "SUSCRIBIRSE",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Snaptube Action Bar (Descargar MP4 / MP3, Solo Audio, Compartir)
+                    val context = LocalContext.current
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Main Yellow Download Button
                         Button(
                             onClick = {
                                 val item = MediaCatalog.sampleVideos.find { it.id == state.id }
                                     ?: MediaCatalog.sampleVideos.first()
                                 onDownloadClick(item)
                             },
-                            modifier = Modifier.weight(1.2f),
-                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.3f),
+                            shape = RoundedCornerShape(20.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = SnaptubeYellow,
                                 contentColor = Color.Black
                             )
                         ) {
-                            Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Descargar", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(
+                                text = "Descargar MP4 / MP3",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
                         }
 
-                        // Watch Later Button
-                        if (onToggleWatchLater != null) {
-                            Button(
-                                onClick = {
-                                    val item = MediaCatalog.sampleVideos.find { it.id == state.id }
-                                        ?: MediaCatalog.sampleVideos.first()
-                                    onToggleWatchLater(item)
-                                    isSavedToWatchLater = !isSavedToWatchLater
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSavedToWatchLater) SnaptubeYellow.copy(alpha = 0.2f) else Color(0xFF1E1E24),
-                                    contentColor = if (isSavedToWatchLater) SnaptubeYellow else Color.White
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = if (isSavedToWatchLater) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(if (isSavedToWatchLater) "Guardado" else "Guardar", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        // Sleep Timer Button
+                        // Solo Audio Toggle
                         Button(
-                            onClick = { showSleepTimerSheet = true },
+                            onClick = onToggleAudioOnly,
                             modifier = Modifier.weight(0.9f),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(20.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (state.sleepTimerMinutesRemaining != null) SnaptubeYellow.copy(alpha = 0.2f) else Color(0xFF1E1E24),
-                                contentColor = if (state.sleepTimerMinutesRemaining != null) SnaptubeYellow else Color.White
+                                containerColor = if (state.isAudioOnlyMode) SnaptubeYellow.copy(alpha = 0.25f) else Color(0xFF1E1E24),
+                                contentColor = if (state.isAudioOnlyMode) SnaptubeYellow else Color.White
                             )
                         ) {
-                            Icon(imageVector = Icons.Default.LockClock, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Icon(
+                                imageVector = Icons.Default.Headphones,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = if (state.sleepTimerMinutesRemaining != null) "${state.sleepTimerMinutesRemaining}m" else "Dormir",
-                                fontSize = 10.sp,
+                                text = "Audio",
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
-                        // Autoplay switch pill
-                        Card(
-                            modifier = Modifier
-                                .weight(1.1f)
-                                .clickable { onToggleAutoplay() },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                        // Compartir
+                        Button(
+                            onClick = {
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    putExtra(Intent.EXTRA_TEXT, "¡Mira este video en YouTube! ${state.mediaUrl}")
+                                    type = "text/plain"
+                                }
+                                context.startActivity(Intent.createChooser(sendIntent, "Compartir video"))
+                            },
+                            modifier = Modifier.weight(0.9f),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1E1E24),
+                                contentColor = Color.White
+                            )
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = "Auto",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (state.isAutoplayEnabled) SnaptubeYellow else Color.Gray
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Switch(
-                                    checked = state.isAutoplayEnabled,
-                                    onCheckedChange = { onToggleAutoplay() },
-                                    modifier = Modifier.size(28.dp, 18.dp),
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = SnaptubeYellow,
-                                        checkedTrackColor = Color(0xFF3B2F04)
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Speed selectors
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val speeds = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
-                        speeds.forEach { speed ->
-                            val isSel = selectedSpeed == speed
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSel) SnaptubeYellow.copy(alpha = 0.3f) else Color(0xFF1B1B20))
-                                    .clickable {
-                                        selectedSpeed = speed
-                                        onSetSpeed(speed)
-                                    }
-                                    .padding(vertical = 5.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "${speed}x",
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSel) SnaptubeYellow else Color.White
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Compartir",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

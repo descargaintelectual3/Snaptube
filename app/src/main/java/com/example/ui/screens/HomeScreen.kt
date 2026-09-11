@@ -73,26 +73,19 @@ fun HomeScreen(
             .testTag("home_screen"),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
-        // Quick Sites Grid (YouTube, TikTok, Instagram, WhatsApp Status, etc.)
+        // 1. YouTube Category Filter Chips at the very top (Todo, Tendencias, Música, etc.)
         item {
-            QuickSitesRow(
-                sites = MediaCatalog.quickSites,
-                onSiteClick = onQuickSiteClick
+            CategoryChipsRow(
+                categories = MediaCatalog.categories,
+                selectedCategory = selectedCategory,
+                onCategorySelected = onCategorySelected
             )
         }
 
-        // Trending Hot Keywords ticker
-        item {
-            TrendingKeywordsTicker(
-                keywords = MediaCatalog.trendingKeywords,
-                onKeywordClick = onSearchKeywordClick
-            )
-        }
-
-        // YouTube Premium "Seguir viendo" (Continue Watching)
+        // 2. YouTube Premium "Seguir viendo" (Continue Watching)
         if (continueWatching.isNotEmpty()) {
             item {
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -135,7 +128,6 @@ fun HomeScreen(
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = ContentScale.Crop
                                         )
-                                        // Progress bar at the bottom of thumbnail
                                         val progress = if (history.durationSeconds > 0) {
                                             (history.lastPositionSeconds.toFloat() / history.durationSeconds.toFloat()).coerceIn(0f, 1f)
                                         } else 0f
@@ -176,21 +168,12 @@ fun HomeScreen(
             }
         }
 
-        // Category Filter Chips (Todo, Tendencias, Música, Gaming, etc.)
-        item {
-            CategoryChipsRow(
-                categories = MediaCatalog.categories,
-                selectedCategory = selectedCategory,
-                onCategorySelected = onCategorySelected
-            )
-        }
-
-        // Section Title
+        // 3. Section Title
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -209,7 +192,7 @@ fun HomeScreen(
             }
         }
 
-        // Feed of Videos with direct download action
+        // 4. Feed of Videos with direct download action
         items(videos, key = { it.id }) { video ->
             SnaptubeVideoCard(
                 video = video,
@@ -217,42 +200,72 @@ fun HomeScreen(
                 onDownloadClick = { onDownloadClick(video) }
             )
         }
+
+        // 5. Bottom Section: Other Platforms (TikTok, Instagram, WhatsApp Status, etc.)
+        item {
+            OtherPlatformsBottomSection(
+                sites = MediaCatalog.quickSites,
+                onSiteClick = onQuickSiteClick
+            )
+        }
     }
 }
 
 @Composable
-private fun QuickSitesRow(
+private fun OtherPlatformsBottomSection(
     sites: List<MediaCatalog.QuickSite>,
     onSiteClick: (MediaCatalog.QuickSite) -> Unit
 ) {
-    Column(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
     ) {
-        // First row of 4 sites
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(16.dp)
         ) {
-            sites.take(4).forEach { site ->
-                QuickSiteItem(site = site, onClick = { onSiteClick(site) })
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(SnaptubeYellow),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Descargar de otras plataformas",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
-        }
+            Spacer(modifier = Modifier.height(12.dp))
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Second row of 4 sites
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            sites.drop(4).take(4).forEach { site ->
-                QuickSiteItem(site = site, onClick = { onSiteClick(site) })
+            // Non-YouTube sites in a clean horizontal row
+            val otherSites = sites.filter { !it.name.contains("YouTube", ignoreCase = true) }
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(otherSites) { site ->
+                    QuickSiteItem(site = site, onClick = { onSiteClick(site) })
+                }
             }
         }
     }

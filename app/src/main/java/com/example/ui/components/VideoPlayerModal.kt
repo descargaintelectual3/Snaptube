@@ -46,10 +46,12 @@ import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Verified
@@ -144,6 +146,7 @@ fun VideoPlayerModal(
 
     var currentBrightness by remember { mutableFloatStateOf(state.brightnessLevel) }
     var currentVolume by remember { mutableFloatStateOf(state.volumeLevel) }
+    var webViewInstance by remember { mutableStateOf<android.webkit.WebView?>(null) }
 
     Dialog(
         onDismissRequest = onClose,
@@ -158,7 +161,7 @@ fun VideoPlayerModal(
                     .fillMaxSize()
                     .statusBarsPadding()
             ) {
-                // YouTube Premium Header Bar
+                // Snaptube Player Header Bar (Limpio y Sin Anuncios)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -181,48 +184,71 @@ fun VideoPlayerModal(
 
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    // YouTube Red Play Icon
+                    // Snaptube Brand Icon
                     Box(
                         modifier = Modifier
-                            .size(28.dp, 20.dp)
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(Color(0xFFFF0000)),
+                            .size(26.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(SnaptubeYellow),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "YouTube",
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
+                            contentDescription = "Snaptube Player",
+                            tint = Color.Black,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = "YouTube",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Black,
+                        text = "Reproductor HD",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
 
                     Spacer(modifier = Modifier.width(6.dp))
 
+                    // AdBlock Shield Badge
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF272727))
+                            .background(Color(0xFF10B981).copy(alpha = 0.2f))
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     ) {
-                        Text(
-                            text = "Premium",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Sin Anuncios",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF10B981)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.weight(1f))
+
+                    // Reload Video Button
+                    IconButton(
+                        onClick = { webViewInstance?.reload() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Recargar video",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
 
                     IconButton(
                         onClick = onEnterPiP,
@@ -314,74 +340,111 @@ fun VideoPlayerModal(
                                 )
                             }
                         } else if (ytVideoId != null) {
-                            // Genuine YouTube Mobile Player
+                            // Reproductor Web Real con Bloqueo de Anuncios Integrado
                             AndroidView(
                                 modifier = Modifier.fillMaxSize(),
                                 factory = { ctx ->
                                     android.webkit.WebView(ctx).apply {
+                                        webViewInstance = this
+                                        setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                                         settings.javaScriptEnabled = true
                                         settings.domStorageEnabled = true
+                                        settings.databaseEnabled = true
                                         settings.mediaPlaybackRequiresUserGesture = false
                                         settings.loadWithOverviewMode = true
                                         settings.useWideViewPort = true
                                         settings.allowFileAccess = true
-                                        settings.databaseEnabled = true
+                                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                         settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-                                        webChromeClient = android.webkit.WebChromeClient()
+                                        
+                                        webChromeClient = object : android.webkit.WebChromeClient() {
+                                            override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
+                                                super.onProgressChanged(view, newProgress)
+                                            }
+                                        }
+                                        
                                         webViewClient = object : android.webkit.WebViewClient() {
                                             override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                                                 return false
                                             }
+
+                                            override fun shouldInterceptRequest(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? {
+                                                val url = request?.url?.toString()?.lowercase() ?: return null
+                                                // Bloqueo de servidores publicitarios a nivel red
+                                                if (url.contains("doubleclick.net") ||
+                                                    url.contains("googleads") ||
+                                                    url.contains("pagead2") ||
+                                                    url.contains("adservice.google") ||
+                                                    url.contains("pubads.g.doubleclick") ||
+                                                    url.contains("/api/stats/ads") ||
+                                                    url.contains("/pagead/") ||
+                                                    url.contains("fls-na.amazon-adsystem") ||
+                                                    url.contains("securepubads")
+                                                ) {
+                                                    return android.webkit.WebResourceResponse("text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                                                }
+                                                return super.shouldInterceptRequest(view, request)
+                                            }
+
+                                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                                super.onPageFinished(view, url)
+                                                // Script de salto de publicidad y auto-reproducción
+                                                val jsAdBlock = """
+                                                    (function() {
+                                                        if (!document.getElementById('snaptube-adblock-css')) {
+                                                            var st = document.createElement('style');
+                                                            st.id = 'snaptube-adblock-css';
+                                                            st.innerHTML = `
+                                                                header, ytm-mobile-topbar-renderer, .mobile-topbar-header, .ytm-pivot-bar-renderer,
+                                                                ytm-app-banner, .standalone-collection-badge-renderer, ytm-promoted-sparkles-web-renderer,
+                                                                .ad-showing, .ad-interrupting, .video-ads, .ytp-ad-module,
+                                                                .ytp-ad-overlay-container, .ytp-ad-text, .ytp-ad-skip-button-slot,
+                                                                ytd-action-companion-ad-renderer, ytd-banner-promo-renderer,
+                                                                .companion-ad-container, #player-ads, .ad-container {
+                                                                    display: none !important;
+                                                                }
+                                                                #player, .player-container, ytm-media-item {
+                                                                    top: 0 !important;
+                                                                    margin: 0 !important;
+                                                                }
+                                                            `;
+                                                            (document.head || document.documentElement).appendChild(st);
+                                                        }
+                                                        function autoSkipAndPlay() {
+                                                            var skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, .ytp-ad-text');
+                                                            for (var i = 0; i < skipBtns.length; i++) {
+                                                                skipBtns[i].click();
+                                                            }
+                                                            var v = document.querySelector('video');
+                                                            var ad = document.querySelector('.ad-showing, .ad-interrupting');
+                                                            if (v && ad && v.duration && !isNaN(v.duration)) {
+                                                                v.muted = true;
+                                                                v.currentTime = v.duration;
+                                                            }
+                                                            if (v && v.paused) {
+                                                                v.play().catch(function(){});
+                                                            }
+                                                            var bigPlay = document.querySelector('.ytp-large-play-button, .play-button');
+                                                            if (bigPlay) bigPlay.click();
+                                                        }
+                                                        setInterval(autoSkipAndPlay, 300);
+                                                        autoSkipAndPlay();
+                                                    })();
+                                                """.trimIndent()
+                                                view?.evaluateJavascript(jsAdBlock, null)
+                                            }
                                         }
+
                                         tag = ytVideoId
-                                        val html = """
-                                            <!DOCTYPE html>
-                                            <html style="margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;">
-                                            <head>
-                                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                                <style>
-                                                    * { margin:0; padding:0; box-sizing:border-box; }
-                                                    body, html { width:100%; height:100%; background:#000; overflow:hidden; }
-                                                    iframe { width:100%; height:100%; border:none; }
-                                                </style>
-                                            </head>
-                                            <body style="margin:0;padding:0;width:100%;height:100%;background:#000;">
-                                                <iframe 
-                                                    src="https://www.youtube.com/embed/$ytVideoId?autoplay=1&playsinline=1&controls=1&fs=1&enablejsapi=1&rel=0" 
-                                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                                    allowfullscreen>
-                                                </iframe>
-                                            </body>
-                                            </html>
-                                        """.trimIndent()
-                                        loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
+                                        loadUrl("https://m.youtube.com/watch?v=$ytVideoId")
                                     }
                                 },
                                 update = { wv ->
+                                    webViewInstance = wv
                                     val currentTag = wv.tag as? String
                                     if (currentTag != ytVideoId) {
                                         wv.tag = ytVideoId
-                                        val html = """
-                                            <!DOCTYPE html>
-                                            <html style="margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;">
-                                            <head>
-                                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                                <style>
-                                                    * { margin:0; padding:0; box-sizing:border-box; }
-                                                    body, html { width:100%; height:100%; background:#000; overflow:hidden; }
-                                                    iframe { width:100%; height:100%; border:none; }
-                                                </style>
-                                            </head>
-                                            <body style="margin:0;padding:0;width:100%;height:100%;background:#000;">
-                                                <iframe 
-                                                    src="https://www.youtube.com/embed/$ytVideoId?autoplay=1&playsinline=1&controls=1&fs=1&enablejsapi=1&rel=0" 
-                                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                                    allowfullscreen>
-                                                </iframe>
-                                            </body>
-                                            </html>
-                                        """.trimIndent()
-                                        wv.loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
+                                        wv.loadUrl("https://m.youtube.com/watch?v=$ytVideoId")
                                     }
                                 }
                             )
@@ -874,7 +937,7 @@ fun VideoPlayerModal(
                     )
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
-                        text = "${state.subtitle} • YouTube Oficial",
+                        text = "${state.subtitle} • Reproducción Web Sin Anuncios",
                         fontSize = 12.sp,
                         color = Color(0xFFAAAAAA)
                     )
@@ -954,9 +1017,19 @@ fun VideoPlayerModal(
                         // Main Yellow Download Button
                         Button(
                             onClick = {
-                                val item = MediaCatalog.sampleVideos.find { it.id == state.id }
-                                    ?: MediaCatalog.sampleVideos.first()
-                                onDownloadClick(item)
+                                val currentVideo = MediaCatalog.sampleVideos.find { it.id == state.id } ?: VideoItem(
+                                    id = state.id.ifEmpty { "vid_${System.currentTimeMillis()}" },
+                                    title = state.title.ifEmpty { "Video" },
+                                    channel = state.subtitle.ifEmpty { "Snaptube" },
+                                    duration = "${(state.totalDurationSeconds / 60)}:${(state.totalDurationSeconds % 60).toString().padStart(2, '0')}",
+                                    viewCount = "1.5M",
+                                    publishedTime = "Reciente",
+                                    thumbnailUrl = state.thumbnailUrl.ifEmpty { "https://i.ytimg.com/vi/${state.id}/hqdefault.jpg" },
+                                    videoUrl = if (state.mediaUrl.startsWith("http")) state.mediaUrl else "https://www.youtube.com/watch?v=${state.id}",
+                                    category = "Descargas",
+                                    qualityOptions = MediaCatalog.getDefaultQualityOptions(32.0)
+                                )
+                                onDownloadClick(currentVideo)
                             },
                             modifier = Modifier.weight(1.3f),
                             shape = RoundedCornerShape(20.dp),
@@ -1051,7 +1124,7 @@ fun VideoPlayerModal(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "A continuación (Cola Premium)",
+                            text = "A continuación (Reproducción Sin Anuncios)",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White

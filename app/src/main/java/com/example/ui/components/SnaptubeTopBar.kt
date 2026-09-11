@@ -83,51 +83,51 @@ fun SnaptubeTopBar(
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
-            // Top branding row - YouTube Premium style
+            // Top branding row - Snaptube VIP Sin Anuncios
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Official YouTube Red Play Logo
+                // Snaptube Yellow Brand Icon
                 Box(
                     modifier = Modifier
-                        .size(34.dp, 24.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color(0xFFFF0000)),
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SnaptubeYellow),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "YouTube",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
+                        imageVector = Icons.Default.FileDownload,
+                        contentDescription = "Snaptube",
+                        tint = Color.Black,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Text(
-                    text = "YouTube",
+                    text = "Snaptube",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Black,
-                    letterSpacing = (-0.8).sp,
+                    letterSpacing = (-0.5).sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.width(5.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
-                // Premium badge
+                // AdBlock VIP badge
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0xFF212121))
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                        .background(Color(0xFF10B981).copy(alpha = 0.15f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = "Premium",
+                        text = "VIP • Sin Anuncios",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = Color(0xFF10B981)
                     )
                 }
 

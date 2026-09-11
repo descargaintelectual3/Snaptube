@@ -231,12 +231,19 @@ class MediaPlaybackManager(
         // Setup ExoPlayer if available and media is a valid local file or direct stream
         exoPlayer?.let { player ->
             try {
-                val hasLocalFile = localFilePath.isNotEmpty() && File(localFilePath).exists() && File(localFilePath).length() > 500
+                val effectiveLocalPath = if (localFilePath.isNotEmpty() && File(localFilePath).exists() && File(localFilePath).length() > 100) {
+                    localFilePath
+                } else if (mediaUrl.isNotEmpty() && File(mediaUrl).exists() && File(mediaUrl).length() > 100) {
+                    mediaUrl
+                } else {
+                    ""
+                }
+                val hasLocalFile = effectiveLocalPath.isNotEmpty()
                 val isDirectStream = isDirectMediaStream(mediaUrl)
 
                 if (hasLocalFile || isDirectStream) {
                     val uri = if (hasLocalFile) {
-                        Uri.fromFile(File(localFilePath))
+                        Uri.fromFile(File(effectiveLocalPath))
                     } else {
                         Uri.parse(mediaUrl)
                     }

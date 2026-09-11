@@ -333,6 +333,22 @@ fun BrowserScreen(
                                 """.trimIndent()
                                 view?.evaluateJavascript(jsSniffer, null)
                             }
+
+                            override fun onRenderProcessGone(
+                                view: WebView?,
+                                detail: android.webkit.RenderProcessGoneDetail?
+                            ): Boolean {
+                                view?.let {
+                                    val parent = it.parent as? android.view.ViewGroup
+                                    parent?.removeView(it)
+                                    try {
+                                        it.destroy()
+                                    } catch (e: Exception) {
+                                        // Ignore
+                                    }
+                                }
+                                return true
+                            }
                         }
                         loadUrl(currentUrl)
                     }

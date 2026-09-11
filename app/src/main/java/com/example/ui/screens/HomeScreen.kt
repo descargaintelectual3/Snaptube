@@ -53,7 +53,23 @@ import com.example.data.repository.MediaCatalog
 import com.example.ui.theme.SnaptubeRed
 import com.example.ui.theme.SnaptubeYellow
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.media3.common.util.UnstableApi
+import com.example.engine.YouTubeMediaInterceptorService
+import com.example.ui.components.YouTubeWebViewBrowser
 
+enum class YouTubeHomeMode {
+    WEB_BROWSER,
+    FEED
+}
+
+@UnstableApi
 @Composable
 fun HomeScreen(
     videos: List<VideoItem>,
@@ -65,148 +81,227 @@ fun HomeScreen(
     onSearchKeywordClick: (String) -> Unit,
     continueWatching: List<WatchHistoryEntity> = emptyList(),
     onResumeWatching: ((WatchHistoryEntity) -> Unit)? = null,
+    interceptorService: YouTubeMediaInterceptorService? = null,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
+    var youTubeMode by remember { mutableStateOf(YouTubeHomeMode.FEED) }
+
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .testTag("home_screen"),
-        contentPadding = PaddingValues(bottom = 80.dp)
+            .testTag("home_screen")
     ) {
-        // 1. YouTube Category Filter Chips at the very top (Todo, Tendencias, Música, etc.)
-        item {
-            CategoryChipsRow(
-                categories = MediaCatalog.categories,
-                selectedCategory = selectedCategory,
-                onCategorySelected = onCategorySelected
-            )
-        }
-
-        // 2. YouTube Premium "Seguir viendo" (Continue Watching)
-        if (continueWatching.isNotEmpty()) {
-            item {
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
+        // Mode Selector: Tendencias & Feed vs Explorador Sin Anuncios
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = { youTubeMode = YouTubeHomeMode.FEED },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (youTubeMode == YouTubeHomeMode.FEED) SnaptubeYellow else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.weight(1f).height(36.dp)
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.History,
+                            imageVector = Icons.AutoMirrored.Filled.TrendingUp,
                             contentDescription = null,
-                            tint = SnaptubeYellow,
-                            modifier = Modifier.size(18.dp)
+                            tint = if (youTubeMode == YouTubeHomeMode.FEED) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Seguir viendo (Continuar)",
-                            fontSize = 15.sp,
+                            text = "Tendencias & Feed",
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = if (youTubeMode == YouTubeHomeMode.FEED) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                }
+
+                Surface(
+                    onClick = { youTubeMode = YouTubeHomeMode.WEB_BROWSER },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (youTubeMode == YouTubeHomeMode.WEB_BROWSER) SnaptubeYellow else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.weight(1f).height(36.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(continueWatching, key = { it.videoId }) { history ->
-                            Card(
-                                modifier = Modifier
-                                    .width(160.dp)
-                                    .clickable { onResumeWatching?.invoke(history) },
-                                shape = RoundedCornerShape(10.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = if (youTubeMode == YouTubeHomeMode.WEB_BROWSER) Color.Black else Color(0xFF10B981),
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Explorador Sin Anuncios",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (youTubeMode == YouTubeHomeMode.WEB_BROWSER) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        if (youTubeMode == YouTubeHomeMode.WEB_BROWSER && interceptorService != null) {
+            // Full embedded WebView-based YouTube browser with custom AdBlocker and Media3 download
+            YouTubeWebViewBrowser(
+                interceptorService = interceptorService,
+                onDownloadClick = onDownloadClick,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Native YouTube curated feed & categories
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("youtube_feed_list"),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                // 1. YouTube Category Filter Chips
+                item {
+                    CategoryChipsRow(
+                        categories = MediaCatalog.categories,
+                        selectedCategory = selectedCategory,
+                        onCategorySelected = onCategorySelected
+                    )
+                }
+
+                // 2. YouTube "Seguir viendo" (Continue Watching)
+                if (continueWatching.isNotEmpty()) {
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Box(
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = SnaptubeYellow,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Seguir viendo (Continuar)",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(continueWatching, key = { it.videoId }) { history ->
+                                    Card(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(90.dp)
+                                            .width(160.dp)
+                                            .clickable { onResumeWatching?.invoke(history) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
-                                        AsyncImage(
-                                            model = history.thumbnailUrl,
-                                            contentDescription = history.title,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                        val progress = if (history.durationSeconds > 0) {
-                                            (history.lastPositionSeconds.toFloat() / history.durationSeconds.toFloat()).coerceIn(0f, 1f)
-                                        } else 0f
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.BottomStart)
-                                                .fillMaxWidth()
-                                                .height(3.dp)
-                                                .background(Color.Black.copy(alpha = 0.5f))
-                                        ) {
+                                        Column {
                                             Box(
                                                 modifier = Modifier
-                                                    .fillMaxWidth(progress)
-                                                    .height(3.dp)
-                                                    .background(SnaptubeRed)
-                                            )
+                                                    .fillMaxWidth()
+                                                    .height(90.dp)
+                                            ) {
+                                                AsyncImage(
+                                                    model = history.thumbnailUrl,
+                                                    contentDescription = history.title,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                                val progress = if (history.durationSeconds > 0) {
+                                                    (history.lastPositionSeconds.toFloat() / history.durationSeconds.toFloat()).coerceIn(0f, 1f)
+                                                } else 0f
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomStart)
+                                                        .fillMaxWidth()
+                                                        .height(3.dp)
+                                                        .background(Color.Black.copy(alpha = 0.5f))
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth(progress)
+                                                            .height(3.dp)
+                                                            .background(SnaptubeRed)
+                                                    )
+                                                }
+                                            }
+                                            Column(modifier = Modifier.padding(8.dp)) {
+                                                Text(
+                                                    text = history.title,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "${history.lastPositionSeconds / 60}:${String.format("%02d", history.lastPositionSeconds % 60)} / ${history.durationSeconds / 60}:${String.format("%02d", history.durationSeconds % 60)}",
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
-                                    }
-                                    Column(modifier = Modifier.padding(8.dp)) {
-                                        Text(
-                                            text = history.title,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${history.lastPositionSeconds / 60}:${String.format("%02d", history.lastPositionSeconds % 60)} / ${history.durationSeconds / 60}:${String.format("%02d", history.durationSeconds % 60)}",
-                                            fontSize = 10.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
+
+                // 3. Section Title
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.TrendingUp,
+                            contentDescription = null,
+                            tint = SnaptubeYellow,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (selectedCategory == "Todo") "Recomendados y Tendencias de YouTube" else selectedCategory,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                }
+
+                // 4. Feed of Videos with direct download action
+                items(videos, key = { it.id }) { video ->
+                    SnaptubeVideoCard(
+                        video = video,
+                        onClick = { onVideoClick(video) },
+                        onDownloadClick = { onDownloadClick(video) }
+                    )
+                }
             }
-        }
-
-        // 3. Section Title
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.TrendingUp,
-                    contentDescription = null,
-                    tint = SnaptubeYellow,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (selectedCategory == "Todo") "Recomendados y Tendencias" else selectedCategory,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-        }
-
-        // 4. Feed of Videos with direct download action
-        items(videos, key = { it.id }) { video ->
-            SnaptubeVideoCard(
-                video = video,
-                onClick = { onVideoClick(video) },
-                onDownloadClick = { onDownloadClick(video) }
-            )
-        }
-
-        // 5. Bottom Section: Other Platforms (TikTok, Instagram, WhatsApp Status, etc.)
-        item {
-            OtherPlatformsBottomSection(
-                sites = MediaCatalog.quickSites,
-                onSiteClick = onQuickSiteClick
-            )
         }
     }
 }

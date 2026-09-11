@@ -226,7 +226,8 @@ fun SnaptubeApp(
                                 openFullScreen = true
                             )
                             viewModel.playbackManager.seekToSeconds(history.lastPositionSeconds)
-                        }
+                        },
+                        interceptorService = viewModel.interceptorService
                     )
                 }
 
@@ -251,7 +252,8 @@ fun SnaptubeApp(
                         watchHistory = watchHistory,
                         onPlayItem = { task ->
                             val localFile = java.io.File(task.localFilePath)
-                            val playUrl = if (task.localFilePath.isNotBlank() && localFile.exists()) {
+                            val hasValidLocalFile = task.localFilePath.isNotBlank() && localFile.exists() && localFile.length() > 0
+                            val playUrl = if (hasValidLocalFile) {
                                 task.localFilePath
                             } else {
                                 task.sourceUrl
@@ -263,7 +265,9 @@ fun SnaptubeApp(
                                 thumbnailUrl = task.thumbnailUrl,
                                 mediaUrl = playUrl,
                                 isVideo = task.mediaType == MediaType.VIDEO,
-                                openFullScreen = true
+                                openFullScreen = true,
+                                localFilePath = if (hasValidLocalFile) task.localFilePath else "",
+                                isOffline = hasValidLocalFile
                             )
                         },
                         onShareItem = { task -> viewModel.shareDownload(context, task) },

@@ -284,7 +284,14 @@ fun VideoPlayerModal(
                         .testTag("video_player_viewport")
                 ) {
                     // Video Content or Audio-Only Visualizer
-                    val hasLocalFile = state.localFilePath.isNotEmpty() && File(state.localFilePath).exists() && File(state.localFilePath).length() > 500
+                    val effectiveLocalPath = if (state.localFilePath.isNotEmpty() && File(state.localFilePath).exists() && File(state.localFilePath).length() > 100) {
+                        state.localFilePath
+                    } else if (state.mediaUrl.isNotEmpty() && File(state.mediaUrl).exists() && File(state.mediaUrl).length() > 100) {
+                        state.mediaUrl
+                    } else {
+                        ""
+                    }
+                    val hasLocalFile = effectiveLocalPath.isNotEmpty()
                     val isDirectStream = state.mediaUrl.isNotEmpty() && (
                         state.mediaUrl.endsWith(".mp4") || state.mediaUrl.endsWith(".mp3") || state.mediaUrl.endsWith(".m4a") ||
                         state.mediaUrl.endsWith(".webm") || state.mediaUrl.endsWith(".m3u8") || state.mediaUrl.contains("googlevideo.com")
@@ -323,7 +330,7 @@ fun VideoPlayerModal(
                                     modifier = Modifier.fillMaxSize(),
                                     factory = { ctx ->
                                         VideoView(ctx).apply {
-                                            setVideoPath(state.localFilePath)
+                                            setVideoPath(effectiveLocalPath)
                                             setOnPreparedListener { mp ->
                                                 mp.isLooping = true
                                                 if (state.isPlaying) start()
@@ -340,13 +347,40 @@ fun VideoPlayerModal(
                                 )
                             }
                         } else if (ytVideoId != null) {
-                            // Reproductor Web Real con Bloqueo de Anuncios Integrado
+                            val embedHtml = """
+                                <!DOCTYPE html>
+                                <html>
+                                <head>
+                                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                    <style>
+                                        * { margin:0; padding:0; box-sizing:border-box; }
+                                        html, body { width:100%; height:100%; background:#000; overflow:hidden; }
+                                        iframe { width:100%; height:100%; border:none; display:block; }
+                                    </style>
+                                    <script>
+                                        try {
+                                            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                                            window.chrome = { runtime: {}, app: {} };
+                                        } catch(e) {}
+                                    </script>
+                                </head>
+                                <body>
+                                    <iframe 
+                                        id="yt-embed"
+                                        src="https://www.youtube-nocookie.com/embed/$ytVideoId?autoplay=1&playsinline=1&controls=1&rel=0&modestbranding=1&enablejsapi=1&iv_load_policy=3" 
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                        allowfullscreen>
+                                    </iframe>
+                                </body>
+                                </html>
+                            """.trimIndent()
+
+                            // Reproductor Web Real con Bloqueo de Anuncios y Anti-Detección
                             AndroidView(
                                 modifier = Modifier.fillMaxSize(),
                                 factory = { ctx ->
                                     android.webkit.WebView(ctx).apply {
                                         webViewInstance = this
-                                        setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                                         settings.javaScriptEnabled = true
                                         settings.domStorageEnabled = true
                                         settings.databaseEnabled = true
@@ -355,7 +389,7 @@ fun VideoPlayerModal(
                                         settings.useWideViewPort = true
                                         settings.allowFileAccess = true
                                         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
                                         
                                         webChromeClient = object : android.webkit.WebChromeClient() {
                                             override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
@@ -388,55 +422,36 @@ fun VideoPlayerModal(
 
                                             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                                                 super.onPageFinished(view, url)
-                                                // Script de salto de publicidad y auto-reproducción
-                                                val jsAdBlock = """
+                                                val jsAntiBot = """
                                                     (function() {
-                                                        if (!document.getElementById('snaptube-adblock-css')) {
-                                                            var st = document.createElement('style');
-                                                            st.id = 'snaptube-adblock-css';
-                                                            st.innerHTML = `
-                                                                header, ytm-mobile-topbar-renderer, .mobile-topbar-header, .ytm-pivot-bar-renderer,
-                                                                ytm-app-banner, .standalone-collection-badge-renderer, ytm-promoted-sparkles-web-renderer,
-                                                                .ad-showing, .ad-interrupting, .video-ads, .ytp-ad-module,
-                                                                .ytp-ad-overlay-container, .ytp-ad-text, .ytp-ad-skip-button-slot,
-                                                                ytd-action-companion-ad-renderer, ytd-banner-promo-renderer,
-                                                                .companion-ad-container, #player-ads, .ad-container {
-                                                                    display: none !important;
-                                                                }
-                                                                #player, .player-container, ytm-media-item {
-                                                                    top: 0 !important;
-                                                                    margin: 0 !important;
-                                                                }
-                                                            `;
-                                                            (document.head || document.documentElement).appendChild(st);
-                                                        }
-                                                        function autoSkipAndPlay() {
-                                                            var skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, .ytp-ad-text');
-                                                            for (var i = 0; i < skipBtns.length; i++) {
-                                                                skipBtns[i].click();
-                                                            }
-                                                            var v = document.querySelector('video');
-                                                            var ad = document.querySelector('.ad-showing, .ad-interrupting');
-                                                            if (v && ad && v.duration && !isNaN(v.duration)) {
-                                                                v.muted = true;
-                                                                v.currentTime = v.duration;
-                                                            }
-                                                            if (v && v.paused) {
-                                                                v.play().catch(function(){});
-                                                            }
-                                                            var bigPlay = document.querySelector('.ytp-large-play-button, .play-button');
-                                                            if (bigPlay) bigPlay.click();
-                                                        }
-                                                        setInterval(autoSkipAndPlay, 300);
-                                                        autoSkipAndPlay();
+                                                        try {
+                                                            Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                                                            window.chrome = { runtime: {}, app: {} };
+                                                        } catch(e) {}
                                                     })();
                                                 """.trimIndent()
-                                                view?.evaluateJavascript(jsAdBlock, null)
+                                                view?.evaluateJavascript(jsAntiBot, null)
+                                            }
+
+                                            override fun onRenderProcessGone(
+                                                view: android.webkit.WebView?,
+                                                detail: android.webkit.RenderProcessGoneDetail?
+                                            ): Boolean {
+                                                view?.let {
+                                                    val parent = it.parent as? android.view.ViewGroup
+                                                    parent?.removeView(it)
+                                                    try {
+                                                        it.destroy()
+                                                    } catch (e: Exception) {
+                                                        // Ignore
+                                                    }
+                                                }
+                                                return true
                                             }
                                         }
 
                                         tag = ytVideoId
-                                        loadUrl("https://m.youtube.com/watch?v=$ytVideoId")
+                                        loadDataWithBaseURL("https://www.youtube-nocookie.com", embedHtml, "text/html", "UTF-8", null)
                                     }
                                 },
                                 update = { wv ->
@@ -444,7 +459,7 @@ fun VideoPlayerModal(
                                     val currentTag = wv.tag as? String
                                     if (currentTag != ytVideoId) {
                                         wv.tag = ytVideoId
-                                        wv.loadUrl("https://m.youtube.com/watch?v=$ytVideoId")
+                                        wv.loadDataWithBaseURL("https://www.youtube-nocookie.com", embedHtml, "text/html", "UTF-8", null)
                                     }
                                 }
                             )

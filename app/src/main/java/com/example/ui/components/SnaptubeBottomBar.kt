@@ -18,10 +18,12 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -57,20 +59,20 @@ fun SnaptubeBottomBar(
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp
     ) {
-        // Tab 1: Inicio
+        // Tab 1: YouTube Content View (Prioritized Main Screen)
         NavigationBarItem(
             selected = currentTab == SnaptubeNavTab.HOME,
             onClick = { onTabSelected(SnaptubeNavTab.HOME) },
             icon = {
                 Icon(
-                    imageVector = if (currentTab == SnaptubeNavTab.HOME) Icons.Filled.Home else Icons.Outlined.Home,
-                    contentDescription = "Inicio",
+                    imageVector = if (currentTab == SnaptubeNavTab.HOME) Icons.Filled.Subscriptions else Icons.Outlined.Subscriptions,
+                    contentDescription = "YouTube",
                     modifier = Modifier.size(24.dp)
                 )
             },
             label = {
                 Text(
-                    text = "Inicio",
+                    text = "YouTube",
                     fontSize = 11.sp,
                     fontWeight = if (currentTab == SnaptubeNavTab.HOME) FontWeight.Bold else FontWeight.Normal
                 )
@@ -82,7 +84,7 @@ fun SnaptubeBottomBar(
                 selectedTextColor = MaterialTheme.colorScheme.onSurface,
                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
             ),
-            modifier = Modifier.testTag("tab_inicio")
+            modifier = Modifier.testTag("tab_youtube")
         )
 
         // Tab 2: Navegador

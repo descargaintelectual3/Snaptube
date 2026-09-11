@@ -46,10 +46,12 @@ enum class MyFilesTab {
     VAULT
 }
 
+@androidx.media3.common.util.UnstableApi
 class SnaptubeViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SnaptubeRepository(application)
     val downloadEngine = DownloadEngine(application, repository, viewModelScope)
     val playbackManager = MediaPlaybackManager(viewModelScope, application, repository)
+    val interceptorService = com.example.engine.YouTubeMediaInterceptorService(application)
 
     // Watch History and Continue Watching
     val continueWatching: StateFlow<List<WatchHistoryEntity>> = repository.continueWatching
@@ -168,9 +170,17 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        // Collect download notifications
+        // Initialize Media3 DownloadManager
+        com.example.engine.Media3DownloadManagerHelper.init(application, repository)
+
+        // Collect download notifications from both Media3 and DownloadEngine
         viewModelScope.launch {
             downloadEngine.downloadEvent.collect { message ->
+                _toastMessage.value = message
+            }
+        }
+        viewModelScope.launch {
+            com.example.engine.Media3DownloadManagerHelper.downloadEvents.collect { message ->
                 _toastMessage.value = message
             }
         }
@@ -231,7 +241,8 @@ class SnaptubeViewModel(application: Application) : AndroidViewModel(application
 
     fun confirmDownload(quality: DownloadQualityOption) {
         val video = _activeDownloadVideo.value ?: return
-        downloadEngine.startDownload(video, quality)
+        // Use Media3 DownloadManager service for saving high quality formats locally
+        interceptorService.downloadWithMedia3(video, quality)
         closeDownloadSheet()
     }
 
